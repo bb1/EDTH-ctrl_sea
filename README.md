@@ -6,38 +6,35 @@ Eurpean Defense Tech Hackathon
 ```mermaid
 flowchart LR
 
-%% --- Data Sources ---
-subgraph DataSources[Data Sources]
+subgraph DataSources
     INF[Infrastructure (static)]
     AIS[AIS-Data-In]
     RAD[Radar (Mocked)]
-    SAT((Satellite Image\n(Aggregated,\n2min delay)\nas Geo Point))
-    PR[Passive Radar]
-    AI[Aerial Imagery]
+    SAT[Satellite image (geo point)]
+    PR[Passive radar]
+    AI[Aerial imagery]
 end
 
-%% --- Processing Layer ---
-MATCH[Matching Algo]
-RAE[Risk Assessment Engine]
-BACK[Backend\nFilter min risk score]
-WEB[Web-FE]
+subgraph Processing
+    MATCH[Matching algo]
+    RAE[Risk Assessment Engine]
+    BACK[Backend (filter min risk score)]
+    WEB[Web-FE]
+    UNITY[UNITY client]
+end
 
-%% --- Optional / External ---
-UNITY[UNITY client]
-
-%% --- DB ---
 subgraph DB
-    SHIP[ship\n- flag, dest, origin, name, MMSI]
-    LOC[location\n- ship_id\n- lat/long\n- time\n- velocity\n- data_source]
-    INFRA[Infra\n- [lat,long]\n- id, name\n- type]
-    RISK[risk\n- percentage]
+    SHIP[ship]
+    LOC[location]
+    INFRA[infra]
+    RISK[risk]
 end
 
-%% --- Map Layer ---
-TILE[LibreMap\nTile Server]
-LM[LibreMap]
+subgraph Map
+    TILE[LibreMap Tile Server]
+    LM[LibreMap]
+end
 
-%% --- Data Flow ---
 INF --> MATCH
 AIS --> MATCH
 RAD --> MATCH
@@ -49,27 +46,13 @@ MATCH --> SHIP
 RAE --> LOC
 RAE --> RISK
 
-%% DB Relationships
 SHIP -->|1:n| LOC
 
-%% UI Flow
 RAE --> BACK
 BACK --> WEB
 WEB --> TILE
 TILE --> LM
 
-%% Feedback Loop
-LM -.-> RAE
-
-%% Unity Client Connection
-BACK -.-> UNITY
-
-%% Labels
-classDef green fill:#e8ffe8,stroke:#009900,color:#003300;
-
-BACK:::green
-RAE:::green
-MATCH:::green
 ```
 
 ## Date Sources
