@@ -1,18 +1,18 @@
 services:
   postgres:
-    image: postgres:18
+    image: postgres:16
     container_name: postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: pguser
-      POSTGRES_PASSWORD: pgpass
-      POSTGRES_DB: crtl_sea_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
-      - /data/postgres:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U myuser"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
