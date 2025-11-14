@@ -57,6 +57,7 @@ Indicators:
 - Speed of vessel
 - Course changes
 - AIS signal status (on/off)
+- Gaps in AIS data (high)
 
 Calculate a risk score based on these indicators using a weighted formula.
 
