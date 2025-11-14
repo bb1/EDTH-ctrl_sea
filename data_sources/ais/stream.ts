@@ -15,6 +15,8 @@ declare const process: {
  * Usage: bun data_sources/ais/stream.ts
  */
 
+import { insertAISMessage, initSchema, closeDb } from './db/db';
+
 const API_KEY = Bun.env.AISSTREAM_API_KEY;
 
 if (!API_KEY) {
@@ -75,11 +77,21 @@ function connect(): void {
       console.log('✅ Subscription sent. Listening for AIS messages...\n');
     };
 
-    socket.onmessage = function (event: MessageEvent) {
+    socket.onmessage = async function (event: MessageEvent) {
       try {
         const aisMessage = JSON.parse(event.data as string);
         console.log('📨 AIS Message received:');
         console.log(JSON.stringify(aisMessage, null, 2));
+
+        // Save to database
+        try {
+          const messageId = await insertAISMessage(aisMessage);
+          console.log(`💾 Saved to database (ID: ${messageId})`);
+        } catch (dbError) {
+          console.error('❌ Error saving to database:', dbError);
+          // Continue processing even if DB write fails
+        }
+
         console.log('---\n');
       } catch (error) {
         console.error('❌ Error parsing AIS message:', error);
@@ -118,22 +130,37 @@ function connect(): void {
 }
 
 // Handle graceful shutdown
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\n🛑 Shutting down...');
   if (socket) {
     socket.close();
   }
+  await closeDb();
   process.exit(0);
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('\n🛑 Shutting down...');
   if (socket) {
     socket.close();
   }
+  await closeDb();
   process.exit(0);
 });
 
-// Start the connection
-console.log('🚀 Starting AIS Stream client...');
-connect();
+// Initialize database and start the connection
+async function start() {
+  console.log('🚀 Starting AIS Stream client...');
+
+  // Initialize database schema
+  try {
+    await initSchema();
+  } catch (error) {
+    console.error('❌ Error initializing database schema:', error);
+    console.log('⚠️  Continuing without database initialization...');
+  }
+
+  connect();
+}
+
+start();

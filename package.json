@@ -1,0 +1,15 @@
+{
+  "name": "edth-ctrl-sea",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "stream:ais": "bun data_sources/ais/stream.ts"
+  },
+  "dependencies": {
+    "postgres": "^3.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
+
