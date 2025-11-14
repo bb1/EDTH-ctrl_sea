@@ -1,6 +1,41 @@
 # EDTH-ctrl_sea
 Eurpean Defense Tech Hackathon
 
+## Project structure
+
+```mermaid
+flowchart TD
+    %% Nodes
+    subgraph DataSources [Data sources]
+        infra["Infrastructure\n(Static)"]
+        ais["AIS-Data-In"]
+        radar["Radar (Mocked)"]
+        sentinel["Sentinel One\nGPS"]
+    end
+
+    subgraph PythonLayer [Python]
+        risk["Risk Assessment Engine"]
+        backend["Backend"]
+    end
+
+    subgraph NextLayer [Next.js]
+        web["Web-FE / UNITY client"]
+    end
+
+    %% Flows
+    infra -- "SEDAP-Express" --> risk
+    ais --> risk
+    radar --> risk
+    sentinel -.-> risk
+
+    risk -- "SEDAP-Express" --> backend
+    backend --> web
+
+    %% Styles
+    classDef dashed stroke-dasharray: 5 5;
+    class sentinel dashed;
+```
+
 ## Date Sources
 
 ### AIS Data
