@@ -16,3 +16,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  martin:
+    image: ghcr.io/maplibre/martin:0.20.2
+    container_name: martin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/tiles:/tiles:ro
+      - ./martin-config.yaml:/config/martin.yaml:ro
+    command: ["--config", "/config/martin.yaml"]
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
