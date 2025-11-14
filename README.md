@@ -59,3 +59,7 @@ Indicators:
 - AIS signal status (on/off)
 
 Calculate a risk score based on these indicators using a weighted formula.
+
+### User Feedback loop
+Allow users to provide feedback on risk assessments to improve the model over time in binary fashion (thumbs up/down). This feedback can be used to adjust the weights of the indicators in the risk assessment formula.
+
