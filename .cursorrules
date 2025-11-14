@@ -1,0 +1,56 @@
+# Cursor Agent Instructions
+
+## Runtime and Package Management
+
+**ALWAYS use Bun** for:
+- Runtime execution (`bun run`, `bun <script>`)
+- Package installation (`bun install`, `bun add`, `bun remove`)
+- Script execution (`bun run <script>`)
+- Development server (`bun --bun dev` or `bun dev`)
+
+**NEVER use:**
+- `npm` or `yarn` commands
+- `node` directly (use `bun` instead)
+- Other package managers
+
+## Native Bun Functionality
+
+**Prefer native Bun features:**
+- Use Bun's built-in web server (`Bun.serve()`) instead of Express, Fastify, or other frameworks when possible
+- Use Bun's native file operations (`Bun.file()`, `Bun.write()`) instead of `fs` when appropriate
+- Leverage Bun's native SQLite support (`Bun.SQLite`) when needed
+- Use Bun's native test runner (`bun test`) instead of Jest/Vitest when possible
+
+## Project Structure
+
+This project follows a modular architecture:
+
+### Top-Level Folders
+
+- **`client/`** - Frontend application code (web client, UI components, user-facing interfaces)
+  - Contains the source code for the client-side application
+  - Typically includes React, Vue, or similar framework code
+
+- **`aggregators/`** - Data aggregation services and logic
+  - Services that collect, process, and combine data from multiple sources
+  - Business logic for data transformation and aggregation
+
+- **`data_sources/`** - Data source integrations and adapters
+  - **`ais/`** - AIS (Automatic Identification System) data source integration
+    - Maritime vessel tracking data
+  - **`infrastructure/`** - Infrastructure-related data sources
+    - Infrastructure monitoring, sensor data, or system metrics
+
+## Code Style
+
+- Use TypeScript for type safety
+- Follow modern JavaScript/TypeScript best practices
+- Write clear, self-documenting code
+- Prefer async/await over promises when possible
+
+## When Creating New Files
+
+- Use Bun-compatible syntax and APIs
+- Check if Bun has native support before adding external dependencies
+- Prefer Bun's built-in features over third-party packages when equivalent functionality exists
+
