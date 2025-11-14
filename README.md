@@ -4,36 +4,72 @@ Eurpean Defense Tech Hackathon
 ## Project structure
 
 ```mermaid
-flowchart TD
-    %% Nodes
-    subgraph DataSources [Data sources]
-        infra["Infrastructure\n(Static)"]
-        ais["AIS-Data-In"]
-        radar["Radar (Mocked)"]
-        sentinel["Sentinel One\nGPS"]
-    end
+flowchart LR
 
-    subgraph PythonLayer [Python]
-        risk["Risk Assessment Engine"]
-        backend["Backend"]
-    end
+%% --- Data Sources ---
+subgraph DataSources[Data Sources]
+    INF[Infrastructure (static)]
+    AIS[AIS-Data-In]
+    RAD[Radar (Mocked)]
+    SAT((Satellite Image\n(Aggregated,\n2min delay)\nas Geo Point))
+    PR[Passive Radar]
+    AI[Aerial Imagery]
+end
 
-    subgraph NextLayer [Next.js]
-        web["Web-FE / UNITY client"]
-    end
+%% --- Processing Layer ---
+MATCH[Matching Algo]
+RAE[Risk Assessment Engine]
+BACK[Backend\nFilter min risk score]
+WEB[Web-FE]
 
-    %% Flows
-    infra -- "SEDAP-Express" --> risk
-    ais --> risk
-    radar --> risk
-    sentinel -.-> risk
+%% --- Optional / External ---
+UNITY[UNITY client]
 
-    risk -- "SEDAP-Express" --> backend
-    backend --> web
+%% --- DB ---
+subgraph DB
+    SHIP[ship\n- flag, dest, origin, name, MMSI]
+    LOC[location\n- ship_id\n- lat/long\n- time\n- velocity\n- data_source]
+    INFRA[Infra\n- [lat,long]\n- id, name\n- type]
+    RISK[risk\n- percentage]
+end
 
-    %% Styles
-    classDef dashed stroke-dasharray: 5 5;
-    class sentinel dashed;
+%% --- Map Layer ---
+TILE[LibreMap\nTile Server]
+LM[LibreMap]
+
+%% --- Data Flow ---
+INF --> MATCH
+AIS --> MATCH
+RAD --> MATCH
+
+INF --> RAE
+MATCH --> RAE
+
+MATCH --> SHIP
+RAE --> LOC
+RAE --> RISK
+
+%% DB Relationships
+SHIP -->|1:n| LOC
+
+%% UI Flow
+RAE --> BACK
+BACK --> WEB
+WEB --> TILE
+TILE --> LM
+
+%% Feedback Loop
+LM -.-> RAE
+
+%% Unity Client Connection
+BACK -.-> UNITY
+
+%% Labels
+classDef green fill:#e8ffe8,stroke:#009900,color:#003300;
+
+BACK:::green
+RAE:::green
+MATCH:::green
 ```
 
 ## Date Sources
@@ -50,7 +86,7 @@ Data on critical maritime infrastructure, such as ports, oil rigs, and naval bas
 
 Indicators:
 - 0.5 angle of approach to critical infrastructure equals ~90 degrees
-- 0.15 Current proximity to critical infrastructure (within 500m)
+- 0.15 Current proximity to critical infrastructure (within 100m)
 - 0.1 * Amount of historical proximity
 - 0.1 * Duration close to critical infrastructure
 - 0.15 * Multiple trips close to the same infrastructure
