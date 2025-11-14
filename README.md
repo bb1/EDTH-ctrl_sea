@@ -15,8 +15,9 @@ Data on critical maritime infrastructure, such as ports, oil rigs, and naval bas
 
 Indicators:
 - Proximity to critical infrastructure
-- Amount of historicial proximity
+- Amount of historical proximity
 - Time close to critical infrastructure
+- Multiple trips close to the same infrastructure
 - Type of vessel
 - Speed of vessel
 - Course changes
