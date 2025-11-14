@@ -49,6 +49,7 @@ Data on critical maritime infrastructure, such as ports, oil rigs, and naval bas
 ### Risk Assessment
 
 Indicators:
+- 0.5 angle of approach to critical infrastructure equals ~90 degrees
 - 0.15 Current proximity to critical infrastructure (within 500m)
 - 0.1 * Amount of historical proximity
 - 0.1 * Duration close to critical infrastructure
