@@ -14,13 +14,11 @@ The schema consists of **3 main tables** that work together to store and organiz
 
 **Key Fields:**
 - `id` - UUID identifier for each object message
-- `type` - Type of AIS object/message (e.g., "PositionReport", "DataLinkManagementMessage")
-- `mmsi` - Maritime Mobile Service Identity (unique ship identifier)
-- `object_name` - Name of the vessel/object (if available)
-- `time_utc` - When the message was received
+- `mmsi` - Maritime Mobile Service Identity (unique ship identifier, maintained as one row per vessel by the ingestion code)
+- `object_name` - Latest known vessel/object name (if available)
 - `created_at` - When the record was inserted into the database
 
-**Use Case:** Complete archive of all AIS messages for historical tracking and auditing.
+**Use Case:** Stable vessel registry (one row per MMSI) that keeps a consistent UUID for joins with high-volume tables like `position_reports` and `ship_metadata`.
 
 ---
 
@@ -71,11 +69,11 @@ The schema consists of **3 main tables** that work together to store and organiz
 
 ```
 object (1) ──< (many) position_reports
-object (1) ──< (many) ship_metadata
+object (1) ──1 ship_metadata
 ```
 
-- Each message in `object` can have **one** corresponding record in `position_reports` (if it's a qualifying position report: AIS types 1, 2, 3, 18, 19, or 27)
-- Each message in `object` can have **one** corresponding record in `ship_metadata` (if it's a static data message: AIS types 5 or 24)
+- Each vessel record in `object` can have **many** corresponding records in `position_reports` (all qualifying position reports for its MMSI: AIS types 1, 2, 3, 18, 19, or 27)
+- Each vessel record in `object` can have **at most one** corresponding record in `ship_metadata` (static data messages: AIS types 5 or 24, upserted per MMSI)
 - Foreign keys ensure data integrity: if an object is deleted, related records are automatically removed (CASCADE)
 
 ---
@@ -87,9 +85,7 @@ object (1) ──< (many) ship_metadata
 The schema includes indexes on commonly queried fields for fast lookups:
 
 **`object` indexes:**
-- `mmsi` - Find all messages from a specific ship
-- `time_utc` - Time-based queries and filtering
-- `type` - Filter by message type
+- `mmsi` - Fast lookups by MMSI
 - `created_at` - Database insertion time queries
 
 **`position_reports` indexes:**
@@ -123,7 +119,7 @@ SELECT * FROM recent_position_reports;
 ### How Data Gets Stored
 
 1. **AIS message arrives** from the stream
-2. **Insert into `object`** - Basic metadata stored
+2. **Upsert into `object`** - Basic vessel metadata stored per MMSI (reuses the same UUID if the ship already exists)
 3. **Application code extracts data** based on message type:
    - If AIS type is `1, 2, 3, 18, 19, 27` → Insert into `position_reports` table
    - If AIS type is `5 or 24` → Upsert into `ship_metadata` table
@@ -160,11 +156,10 @@ WHERE ST_Intersects(
 SELECT * FROM recent_position_reports;
 ```
 
-### Find all objects of a specific type
+### Find a vessel by MMSI
 ```sql
 SELECT * FROM object 
-WHERE type = 'PositionReport'
-ORDER BY time_utc DESC;
+WHERE mmsi = 636023108;
 ```
 
 ### Look up vessel metadata

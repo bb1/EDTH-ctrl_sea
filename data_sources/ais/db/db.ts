@@ -263,6 +263,12 @@ export async function insertObject(
 ): Promise<string | null> {
   const db = getDb();
   const metadata = message.MetaData as Record<string, any>;
+  const objectName = pickString(
+    metadata.ShipName,
+    metadata.shipName,
+    metadata.Name,
+    metadata.VesselName
+  );
   const messageTypeId = getMessageTypeId(message);
   const shouldInsertPosition = isPositionMessage(
     messageTypeId,
@@ -280,23 +286,44 @@ export async function insertObject(
   // Parse time_utc string to timestamp
   const timeUtc = new Date(message.MetaData.time_utc);
 
-  // Insert into main object table
-  const [result] = await db`
-    INSERT INTO object (
-      type,
-      mmsi,
-      object_name,
-      time_utc
-    ) VALUES (
-      ${message.MessageType},
-      ${message.MetaData.MMSI},
-      ${message.MetaData.ShipName || null},
-      ${timeUtc}
-    )
-    RETURNING id
+  // Insert into main object table or reuse existing entry for this MMSI
+  const existing = await db<{
+    id: string;
+    object_name: string | null;
+  }[]>`
+    SELECT id, object_name
+    FROM object
+    WHERE mmsi = ${message.MetaData.MMSI}
+    ORDER BY created_at ASC
+    LIMIT 1
   `;
 
-  const objectId: string = result.id;
+  let objectId: string;
+
+  if (existing.length > 0) {
+    objectId = existing[0].id;
+
+    // Populate vessel name if we just learned it
+    if (objectName && !existing[0].object_name) {
+      await db`
+        UPDATE object
+        SET object_name = ${objectName}
+        WHERE id = ${objectId}
+      `;
+    }
+  } else {
+    const [inserted] = await db`
+      INSERT INTO object (
+        mmsi,
+        object_name
+      ) VALUES (
+        ${message.MetaData.MMSI},
+        ${objectName}
+      )
+      RETURNING id
+    `;
+    objectId = inserted.id;
+  }
 
   // Extract and insert into specialized tables based on message type
   if (shouldInsertPosition) {

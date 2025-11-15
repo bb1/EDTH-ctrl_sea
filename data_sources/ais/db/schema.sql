@@ -9,17 +9,12 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 -- Main table for all AIS messages
 CREATE TABLE IF NOT EXISTS object (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    type VARCHAR(50) NOT NULL,
     mmsi BIGINT NOT NULL,
     object_name VARCHAR(255),
-    time_utc TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_object_mmsi ON object(mmsi);
-CREATE INDEX IF NOT EXISTS idx_object_time_utc ON object(time_utc);
-CREATE INDEX IF NOT EXISTS idx_object_type ON object(type);
 CREATE INDEX IF NOT EXISTS idx_object_created_at ON object(created_at);
 
 -- Table for position reports (most common message type)
