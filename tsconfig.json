@@ -7,8 +7,10 @@
       "DOM"
     ],
     "moduleResolution": "bundler",
-    "types": ["bun"],
-    "jsx": "react-jsx",
+    "types": [
+      "bun"
+    ],
+    "jsx": "preserve",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
