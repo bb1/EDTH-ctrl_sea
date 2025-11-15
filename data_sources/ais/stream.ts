@@ -36,8 +36,8 @@ const WS_URL = 'wss://stream.aisstream.io/v0/stream';
 // Format: [latitude, longitude] pairs
 const BOUNDING_BOXES = [
   [
-    [53.916549, 12.092243], // Southwest corner
-    [56.776127, 18.222615], // Northeast corner
+    [54.151051, 11.623082], // Southwest corner
+    [54.753038, 12.268528], // Northeast corner
   ],
 ];
 
