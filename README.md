@@ -4,55 +4,77 @@ Eurpean Defense Tech Hackathon
 ## Project structure
 
 ```mermaid
-flowchart LR
+flowchart TD
 
-subgraph DataSources
-    INF[Infrastructure (static)]
+%% --- DATA SOURCES -----------------------------------------------------------------
+
+subgraph DS[Data sources]
     AIS[AIS-Data-In]
     RAD[Radar (Mocked)]
-    SAT[Satellite image (geo point)]
-    PR[Passive radar]
-    AI[Aerial imagery]
+    SAT[Satellite Image\n(aggregated, 2 min delay)]
+    PR[Passive Radar]
+    AI[Aerial Imagery]
 end
 
-subgraph Processing
-    MATCH[Matching algo]
-    RAE[Risk Assessment Engine]
-    BACK[Backend (filter min risk score)]
-    WEB[Web-FE]
-    UNITY[UNITY client]
+%% --- STATIC INFRA -----------------------------------------------------------------
+
+INFRA_STATIC[Infrastructure (static)]
+
+%% --- MATCHING + RISK ENGINE --------------------------------------------------------
+
+MA[Matching Algo]
+RAE[Risk Assessment Engine]
+
+%% --- DATABASE ----------------------------------------------------------------------
+
+subgraph DB[DB]
+    SHIP[ship\n- flag, dest, origin, name,\n- MMSI]
+    POS[position_report\n- ship_id\n- lat/long\n- time\n- velocity\n- data_source]
+    INF[infra\n- id, name\n- type\n- lat/long]
+    RISK[risk\n- confidence_score\n- explanation\n- confirmed]
 end
 
-subgraph DB
-    SHIP[ship]
-    LOC[location]
-    INFRA[infra]
-    RISK[risk]
+%% --- BACKEND / FRONTEND ------------------------------------------------------------
+
+subgraph SYS[NestJS System]
+    BE[Backend]
+    FE[Web-FE]
 end
 
-subgraph Map
-    TILE[LibreMap Tile Server]
-    LM[LibreMap]
-end
+UNITY[UNITY client]
 
-INF --> MATCH
-AIS --> MATCH
-RAD --> MATCH
+TILE[LibreMap Tile Server]
+MAP[LibreMap]
 
-INF --> RAE
-MATCH --> RAE
 
-MATCH --> SHIP
-RAE --> LOC
+%% --- CONNECTIONS -------------------------------------------------------------------
+
+AIS --> MA
+RAD --> MA
+SAT -.-> MA
+PR -.-> MA
+AI -.-> MA
+
+MA --> RAE
+
+INFRA_STATIC --> INF
+
+RAE --> SHIP
 RAE --> RISK
 
-SHIP -->|1:n| LOC
+POS --> SHIP
+POS --> RISK
 
-RAE --> BACK
-BACK --> WEB
-WEB --> TILE
-TILE --> LM
+SHIP --> POS
+SHIP --> RAE
 
+INF --> RISK
+INF --> RAE
+
+RAE -- SEDAP-Express --> BE
+UNITY -- SEDAP-Express --> RAE
+
+FE --> TILE --> MAP
 ```
 
 ## Date Sources
