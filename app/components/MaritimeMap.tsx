@@ -404,7 +404,13 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
 
   // Animate single ship icon along trajectory
   useEffect(() => {
-    if (!map.current || !isInitializedRef.current || trajectory.length === 0 || cablesMapRef.current.size === 0) {
+    if (!map.current || !isInitializedRef.current || trajectory.length === 0) {
+      return
+    }
+
+    // Don't restart animation if it's already running - infrastructure changes just update color calculation
+    // The cablesMapRef is already updated by the separate useEffect, so the running animation will use it
+    if (animationIntervalRef.current && trajectoryMarkerRef.current) {
       return
     }
 
@@ -420,7 +426,10 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
 
     // Create initial marker at first point
     const initialPoint = trajectory[0]
-    const initialColor = getVesselColor({ lat: initialPoint.lat, lon: initialPoint.lon }, cablesMapRef.current)
+    // Use green as default if cables aren't loaded yet
+    const initialColor = cablesMapRef.current.size > 0 
+      ? getVesselColor({ lat: initialPoint.lat, lon: initialPoint.lon }, cablesMapRef.current)
+      : 'green'
     const icon = createShipIcon(initialColor)
     const marker = new maplibregl.Marker({ element: icon })
       .setLngLat([initialPoint.lon, initialPoint.lat])
@@ -437,8 +446,10 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       const currentIndex = currentTrajectoryIndexRef.current
       const point = trajectory[currentIndex]
       
-      // Update color based on proximity
-      const color = getVesselColor({ lat: point.lat, lon: point.lon }, cablesMapRef.current)
+      // Update color based on proximity (use green as default if cables aren't loaded)
+      const color = cablesMapRef.current.size > 0
+        ? getVesselColor({ lat: point.lat, lon: point.lon }, cablesMapRef.current)
+        : 'green'
       const previousColor = previousColorRef.current
       
       // Check for color transitions and trigger alerts
@@ -501,6 +512,8 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
           clearInterval(animationIntervalRef.current)
           animationIntervalRef.current = null
         }
+        // Keep marker visible at final position
+        return
       } else {
         currentTrajectoryIndexRef.current = nextIndex
       }

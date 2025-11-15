@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { mockShips } from '../../lib/mockData'
 
 export async function GET() {
-  return NextResponse.json(mockShips)
+  // Return empty array - ships will come from real data sources
+  return NextResponse.json([])
 }

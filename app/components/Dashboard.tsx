@@ -1,169 +1,137 @@
-'use client'
+'use client';
 
-import { useState, useEffect, useRef } from 'react'
-import MaritimeMap from './MaritimeMap'
-import AlertsFeed from './AlertsFeed'
-import VesselDetails from './VesselDetails'
-import Header from './Header'
+import { useState, useCallback } from 'react';
+import { Header } from './Header';
+import MaritimeMap from './MaritimeMap';
+import { AlertsFeed } from './AlertsFeed';
+import { VesselDetails } from './VesselDetails';
+import { useMaritimeData } from '../hooks/useMaritimeData';
+import { exportAlertsToCSV, downloadCSV } from '../lib/utils';
+import type { Ship, Alert } from '../lib/types';
 
-interface Ship {
-  id: number
-  mmsi: number
-  name: string
-  flag: string
-  origin: string
-  destination: string
-  lat: number
-  long: number
-  velocity: number
-  risk_percentage: number
-  last_position_time: string
-  data_source: string
-}
+export function Dashboard() {
+  const { data, loading, error, connected, lastUpdate, refreshData, getShipById } =
+    useMaritimeData();
+  const [selectedShipId, setSelectedShipId] = useState<number | null>(null);
+  const [trajectoryAlerts, setTrajectoryAlerts] = useState<Alert[]>([]);
 
-interface Infrastructure {
-  id: number
-  name: string
-  type: string
-  lat: number
-  lng: number
-  radius: number
-}
+  const handleShipClick = useCallback((ship: Ship) => {
+    setSelectedShipId(ship.id);
+  }, []);
 
-interface GeoJSONFeatureCollection {
-  type: 'FeatureCollection'
-  features: any[]
-}
-
-interface Alert {
-  id: number
-  ship_id: number
-  vessel_name: string
-  alert_type: string
-  description: string
-  risk_percentage: number
-  timestamp: string
-}
-
-// Deep comparison function to check if data has changed
-function hasDataChanged<T>(oldData: T[], newData: T[]): boolean {
-  if (oldData.length !== newData.length) return true
-  
-  // Create a map for quick lookup
-  const oldMap = new Map(oldData.map(item => [(item as any).id, item]))
-  
-  for (const newItem of newData) {
-    const id = (newItem as any).id
-    const oldItem = oldMap.get(id)
-    
-    if (!oldItem) return true // New item found
-    
-    // Compare relevant fields that would affect the map
-    if (JSON.stringify(oldItem) !== JSON.stringify(newItem)) {
-      return true
-    }
-  }
-  
-  return false
-}
-
-interface VesselAlert {
-  id: string
-  type: 'yellow' | 'red'
-  message: string
-  timestamp: string
-  vesselName: string
-  mmsi: number
-  count: number
-}
-
-export default function Dashboard() {
-  const [ships, setShips] = useState<Ship[]>([])
-  const [infrastructure, setInfrastructure] = useState<Infrastructure[] | GeoJSONFeatureCollection>([])
-  const [vesselAlerts, setVesselAlerts] = useState<VesselAlert[]>([])
-  const [selectedShip, setSelectedShip] = useState<Ship | null>(null)
-  
-  // Keep refs to previous data for comparison
-  const prevShipsRef = useRef<Ship[]>([])
-  const prevInfrastructureRef = useRef<Infrastructure[] | GeoJSONFeatureCollection>([])
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [shipsRes, infraRes] = await Promise.all([
-          fetch('/api/ships'),
-          fetch('/api/infrastructure')
-        ])
-        
-        const newShips = await shipsRes.json()
-        const newInfrastructure = await infraRes.json()
-        
-        // Only update state if data has actually changed
-        if (hasDataChanged(prevShipsRef.current, newShips)) {
-          setShips(newShips)
-          prevShipsRef.current = newShips
-        }
-        
-        // Check if infrastructure is GeoJSON or array
-        const infraChanged = Array.isArray(newInfrastructure) 
-          ? hasDataChanged(prevInfrastructureRef.current as Infrastructure[], newInfrastructure as Infrastructure[])
-          : JSON.stringify(prevInfrastructureRef.current) !== JSON.stringify(newInfrastructure)
-        
-        if (infraChanged) {
-          setInfrastructure(newInfrastructure)
-          prevInfrastructureRef.current = newInfrastructure
-        }
-      } catch (error) {
-        console.error('Error fetching data:', error)
+  const handleAlertClick = useCallback(
+    (alert: Alert) => {
+      // Find the ship associated with this alert and select it
+      const ship = getShipById(alert.ship_id);
+      if (ship) {
+        setSelectedShipId(ship.id);
       }
+    },
+    [getShipById]
+  );
+
+  const handleCloseVesselDetails = useCallback(() => {
+    setSelectedShipId(null);
+  }, []);
+
+  const handleExport = useCallback(() => {
+    const allAlerts = [...data.alerts, ...trajectoryAlerts];
+    const csvContent = exportAlertsToCSV(allAlerts);
+    downloadCSV(csvContent, `maritime-alerts-${new Date().toISOString().split('T')[0]}.csv`);
+  }, [data.alerts, trajectoryAlerts]);
+
+  const handleVesselColorChange = useCallback((vesselAlert: { id: string; type: 'yellow' | 'red'; message: string; timestamp: string; vesselName: string; mmsi: number; count: number }) => {
+    // Convert VesselAlert to Alert format
+    const alert: Alert = {
+      id: trajectoryAlerts.length + 1,
+      ship_id: 0, // Will be set if we can find the ship by MMSI
+      vessel_name: vesselAlert.vesselName,
+      alert_type: vesselAlert.type === 'red' ? 'geofence_breach' : 'trajectory_anomaly',
+      description: vesselAlert.message,
+      risk_percentage: vesselAlert.type === 'red' ? 90 : 60,
+      timestamp: vesselAlert.timestamp
+    };
+
+    // Try to find ship by MMSI
+    const ship = data.ships.find(s => s.mmsi === vesselAlert.mmsi.toString());
+    if (ship) {
+      alert.ship_id = ship.id;
     }
 
-    fetchData()
-    const interval = setInterval(fetchData, 5000)
-    return () => clearInterval(interval)
-  }, [])
-
-  const handleVesselColorChange = (alert: VesselAlert) => {
-    setVesselAlerts(prev => {
-      // Find existing alert of the same type for the same vessel
-      const existingIndex = prev.findIndex(
-        a => a.type === alert.type && a.vesselName === alert.vesselName
-      )
-      
+    setTrajectoryAlerts(prev => {
+      // Check if alert already exists (by id)
+      const existingIndex = prev.findIndex(a => a.id.toString() === vesselAlert.id);
       if (existingIndex >= 0) {
-        // Update existing alert count
-        const updated = [...prev]
-        updated[existingIndex] = {
-          ...updated[existingIndex],
-          count: updated[existingIndex].count + 1,
-          timestamp: alert.timestamp, // Update to latest timestamp
-          mmsi: alert.mmsi // Update MMSI in case it changed
-        }
-        return updated
-      } else {
-        // Add new alert with count 1
-        return [...prev, { ...alert, count: 1 }]
+        // Update existing alert
+        const updated = [...prev];
+        updated[existingIndex] = { ...alert, id: prev[existingIndex].id };
+        return updated;
       }
-    })
-  }
+      // Add new alert
+      return [...prev, alert];
+    });
+  }, [data.ships, trajectoryAlerts.length]);
 
-  const handleClearAlerts = () => {
-    setVesselAlerts([])
-  }
+  const selectedShip = selectedShipId ? getShipById(selectedShipId) : null;
 
   return (
     <div className="flex flex-col h-screen bg-slate-900">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <AlertsFeed alerts={vesselAlerts} onClearAlerts={handleClearAlerts} />
-        <MaritimeMap 
-          ships={ships} 
-          infrastructure={infrastructure} 
-          onVesselClick={setSelectedShip}
-          onVesselColorChange={handleVesselColorChange}
-        />
-        {selectedShip && <VesselDetails ship={selectedShip} onClose={() => setSelectedShip(null)} />}
+      <Header
+        connected={connected}
+        lastUpdate={lastUpdate}
+        onRefresh={refreshData}
+        onExport={handleExport}
+        alertsCount={data.alerts.length + trajectoryAlerts.length}
+        shipsCount={data.ships.length}
+      />
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Sidebar - Alerts Feed (25%) */}
+        <div className="w-96 flex-shrink-0">
+          <AlertsFeed
+            alerts={[...data.alerts, ...trajectoryAlerts]}
+            ships={data.ships}
+            onAlertClick={handleAlertClick}
+          />
+        </div>
+
+        {/* Center - Map (50%) */}
+        <div className="flex-1 relative">
+          {loading && !connected && (
+            <div className="absolute inset-0 bg-slate-900/80 z-50 flex items-center justify-center">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4" />
+                <p className="text-slate-400">Connecting to backend...</p>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg">
+              {error}
+            </div>
+          )}
+
+          <MaritimeMap
+            ships={data.ships.map(s => ({ id: s.id, name: s.name, lat: s.lat, long: s.long, risk_percentage: s.risk_percentage }))}
+            infrastructure={data.infrastructure}
+            onVesselClick={(ship) => {
+              const fullShip = data.ships.find(s => s.id === ship.id);
+              if (fullShip) setSelectedShipId(fullShip.id);
+            }}
+            onVesselColorChange={handleVesselColorChange}
+          />
+        </div>
+
+        {/* Right Sidebar - Vessel Details (25%) */}
+        <div className="w-96 flex-shrink-0">
+          <VesselDetails
+            ship={selectedShip}
+            alerts={[...data.alerts, ...trajectoryAlerts]}
+            onClose={handleCloseVesselDetails}
+          />
+        </div>
       </div>
     </div>
-  )
+  );
 }

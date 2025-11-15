@@ -31,22 +31,28 @@ export async function fetchShips(): Promise<Ship[]> {
 
 /**
  * Fetch all infrastructure zones from backend API
+ * Returns either Infrastructure[] or GeoJSON FeatureCollection
  */
-export async function fetchInfrastructure(): Promise<Infrastructure[]> {
+export async function fetchInfrastructure(): Promise<Infrastructure[] | any> {
   try {
     const response = await fetch('/api/infrastructure', {
       cache: 'no-store',
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch infrastructure: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      console.error('Failed to fetch infrastructure:', errorData);
+      // Return empty GeoJSON FeatureCollection instead of empty array
+      return { type: 'FeatureCollection', features: [] };
     }
 
     const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    // Return data as-is (could be array or GeoJSON FeatureCollection)
+    return data;
   } catch (error) {
     console.error('Error fetching infrastructure:', error);
-    return [];
+    // Return empty GeoJSON FeatureCollection instead of empty array
+    return { type: 'FeatureCollection', features: [] };
   }
 }
 
@@ -76,7 +82,7 @@ export async function fetchAlerts(): Promise<Alert[]> {
  */
 export async function fetchMaritimeData(): Promise<{
   ships: Ship[];
-  infrastructure: Infrastructure[];
+  infrastructure: Infrastructure[] | any;
   alerts: Alert[];
 }> {
   try {
