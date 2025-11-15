@@ -15,7 +15,7 @@ declare const process: {
  * Usage: bun data_sources/ais/stream.ts
  */
 
-import { insertAISMessage, initSchema, closeDb } from './db/db';
+import { insertObject, initSchema, closeDb } from './db/db';
 
 const API_KEY = Bun.env.AISSTREAM_API_KEY;
 
@@ -85,8 +85,8 @@ function connect(): void {
 
         // Save to database
         try {
-          const messageId = await insertAISMessage(aisMessage);
-          console.log(`💾 Saved to database (ID: ${messageId})`);
+          const objectId = await insertObject(aisMessage);
+          console.log(`💾 Saved object to database (ID: ${objectId})`);
         } catch (dbError) {
           console.error('❌ Error saving to database:', dbError);
           // Continue processing even if DB write fails

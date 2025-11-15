@@ -39,6 +39,7 @@ export function getDb() {
       idle_timeout: 20,
       connect_timeout: 10,
     });
+    console.log(`✅ Connected to PostgreSQL database at ${connectionString}`);
   }
   return sql;
 }
@@ -70,11 +71,14 @@ export async function initSchema() {
 
   const schema = await schemaFile.text();
 
-  // Split by semicolons and execute each statement
+  // Remove SQL comments and split by semicolons to execute each statement
   const statements = schema
+    .split('\n')
+    .map((line) => line.replace(/--.*$/, '').trimEnd())
+    .join('\n')
     .split(';')
     .map((s: string) => s.trim())
-    .filter((s: string) => s.length > 0 && !s.startsWith('--'));
+    .filter((s: string) => s.length > 0);
 
   for (const statement of statements) {
     if (statement.length === 0) continue;
@@ -119,35 +123,31 @@ export interface AISMessage {
 }
 
 /**
- * Insert AIS message into database
+ * Insert AIS object message into database
  */
-export async function insertAISMessage(message: AISMessage): Promise<number> {
+export async function insertObject(message: AISMessage): Promise<string> {
   const db = getDb();
 
   // Parse time_utc string to timestamp
   const timeUtc = new Date(message.MetaData.time_utc);
 
-  // Insert into main ais_messages table
+  // Insert into main object table
   const [result] = await db`
-    INSERT INTO ais_messages (
-      message_type,
+    INSERT INTO object (
+      type,
       mmsi,
-      ship_name,
-      latitude,
-      longitude,
+      object_name,
       time_utc
     ) VALUES (
       ${message.MessageType},
       ${message.MetaData.MMSI},
       ${message.MetaData.ShipName || null},
-      ${message.MetaData.latitude || null},
-      ${message.MetaData.longitude || null},
       ${timeUtc}
     )
     RETURNING id
   `;
 
-  const messageId = result.id;
+  const objectId: string = result.id;
 
   // Extract and insert into specialized tables based on message type
   if (
@@ -155,41 +155,54 @@ export async function insertAISMessage(message: AISMessage): Promise<number> {
     message.Message.PositionReport
   ) {
     const pr = message.Message.PositionReport;
-    await db`
-      INSERT INTO position_reports (
-        ais_message_id,
-        mmsi,
-        latitude,
-        longitude,
-        time_utc,
-        cog,
-        sog,
-        true_heading,
-        navigational_status,
-        rate_of_turn,
-        position_accuracy,
-        raim,
-        special_manoeuvre_indicator,
-        timestamp,
-        communication_state
-      ) VALUES (
-        ${messageId},
-        ${message.MetaData.MMSI},
-        ${pr.Latitude || message.MetaData.latitude || null},
-        ${pr.Longitude || message.MetaData.longitude || null},
-        ${timeUtc},
-        ${pr.Cog || null},
-        ${pr.Sog || null},
-        ${pr.TrueHeading || null},
-        ${pr.NavigationalStatus || null},
-        ${pr.RateOfTurn || null},
-        ${pr.PositionAccuracy || null},
-        ${pr.Raim || null},
-        ${pr.SpecialManoeuvreIndicator || null},
-        ${pr.Timestamp || null},
-        ${pr.CommunicationState || null}
-      )
-    `;
+    const latitude =
+      pr.Latitude ??
+      message.MetaData.latitude ??
+      null;
+    const longitude =
+      pr.Longitude ??
+      message.MetaData.longitude ??
+      null;
+
+    if (latitude === null || longitude === null) {
+      console.warn(
+        `Skipping position report insert due to missing coordinates (MMSI: ${message.MetaData.MMSI})`
+      );
+    } else {
+      await db`
+        INSERT INTO position_reports (
+          object_id,
+          mmsi,
+          location,
+          time_utc,
+          cog,
+          sog,
+          true_heading,
+          navigational_status,
+          rate_of_turn,
+          position_accuracy,
+          raim,
+          special_manoeuvre_indicator,
+          timestamp,
+          communication_state
+        ) VALUES (
+          ${objectId},
+          ${message.MetaData.MMSI},
+          ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326),
+          ${timeUtc},
+          ${pr.Cog || null},
+          ${pr.Sog || null},
+          ${pr.TrueHeading || null},
+          ${pr.NavigationalStatus || null},
+          ${pr.RateOfTurn || null},
+          ${pr.PositionAccuracy || null},
+          ${pr.Raim || null},
+          ${pr.SpecialManoeuvreIndicator || null},
+          ${pr.Timestamp || null},
+          ${pr.CommunicationState || null}
+        )
+      `;
+    }
   }
 
   if (
@@ -199,10 +212,9 @@ export async function insertAISMessage(message: AISMessage): Promise<number> {
     const dlm = message.Message.DataLinkManagementMessage;
     await db`
       INSERT INTO data_link_management_messages (
-        ais_message_id,
+        object_id,
         mmsi,
-        latitude,
-        longitude,
+        location,
         time_utc,
         message_id,
         repeat_indicator,
@@ -210,10 +222,15 @@ export async function insertAISMessage(message: AISMessage): Promise<number> {
         user_id,
         valid
       ) VALUES (
-        ${messageId},
+        ${objectId},
         ${message.MetaData.MMSI},
-        ${message.MetaData.latitude || null},
-        ${message.MetaData.longitude || null},
+        ST_SetSRID(
+          ST_MakePoint(
+            ${message.MetaData.longitude ?? null},
+            ${message.MetaData.latitude ?? null}
+          ),
+          4326
+        ),
         ${timeUtc},
         ${dlm.MessageID || null},
         ${dlm.RepeatIndicator || null},
@@ -224,7 +241,7 @@ export async function insertAISMessage(message: AISMessage): Promise<number> {
     `;
   }
 
-  return messageId;
+  return objectId;
 }
 
 /**
@@ -271,8 +288,10 @@ export async function getMessagesInBoundingBox(
 
   return await db`
     SELECT * FROM position_reports
-    WHERE latitude BETWEEN ${minLat} AND ${maxLat}
-      AND longitude BETWEEN ${minLon} AND ${maxLon}
+    WHERE ST_Intersects(
+        location,
+        ST_MakeEnvelope(${minLon}, ${minLat}, ${maxLon}, ${maxLat}, 4326)
+      )
       AND time_utc >= NOW() - INTERVAL ${hours} HOUR
     ORDER BY time_utc DESC
   `;
