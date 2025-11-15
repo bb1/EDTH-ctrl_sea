@@ -68,11 +68,14 @@ export async function initSchema() {
 
   const schema = await schemaFile.text();
 
-  // Split by semicolons and execute each statement
+  // Remove SQL comments, split by semicolons, and execute each statement
   const statements = schema
+    .split('\n')
+    .map((line) => line.replace(/--.*$/, '').trimEnd())
+    .join('\n')
     .split(';')
     .map((s: string) => s.trim())
-    .filter((s: string) => s.length > 0 && !s.startsWith('--'));
+    .filter((s: string) => s.length > 0);
 
   for (const statement of statements) {
     if (statement.length === 0) continue;
@@ -547,4 +550,3 @@ export async function searchCablesByName(searchTerm: string, limit: number = 50)
     LIMIT ${limit}
   `;
 }
-

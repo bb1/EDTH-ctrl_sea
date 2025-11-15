@@ -58,7 +58,7 @@ echo "📋 Initializing database schemas..."
 
 # Initialize AIS schema
 echo "  - Initializing AIS schema..."
-bun run -e "
+bun -e "
 import { initSchema, closeDb } from './data_sources/ais/db/db.ts';
 (async () => {
   try {
@@ -75,7 +75,7 @@ import { initSchema, closeDb } from './data_sources/ais/db/db.ts';
 
 # Initialize Infrastructure schema
 echo "  - Initializing Infrastructure schema..."
-bun run -e "
+bun -e "
 import { initSchema, closeDb } from './data_sources/infrastructure/db/db.ts';
 (async () => {
   try {
@@ -96,4 +96,3 @@ bun run verify_schemas.ts
 
 echo ""
 echo "✅ Setup and verification complete!"
-
