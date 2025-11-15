@@ -130,4 +130,127 @@ export function downloadCSV(content: string, filename: string): void {
   document.body.removeChild(link);
 }
 
+/**
+ * Calculate distance from a point to a line segment
+ * Returns distance in degrees (approximate)
+ */
+export function pointToSegmentDistance(
+  point: { lat: number; lon: number },
+  segment: { p1: { lat: number; lon: number }; p2: { lat: number; lon: number } }
+): number {
+  const { p1, p2 } = segment
+  const A = point.lon - p1.lon
+  const B = point.lat - p1.lat
+  const C = p2.lon - p1.lon
+  const D = p2.lat - p1.lat
+
+  const dot = A * C + B * D
+  const lenSq = C * C + D * D
+
+  if (lenSq === 0) {
+    const dx = point.lon - p1.lon
+    const dy = point.lat - p1.lat
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
+  const param = dot / lenSq
+
+  let xx: number, yy: number
+
+  if (param < 0) {
+    xx = p1.lon
+    yy = p1.lat
+  } else if (param > 1) {
+    xx = p2.lon
+    yy = p2.lat
+  } else {
+    xx = p1.lon + param * C
+    yy = p1.lat + param * D
+  }
+
+  const dx = point.lon - xx
+  const dy = point.lat - yy
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+/**
+ * Get minimum distance from a point to any segment of a cable
+ */
+export function getMinDistanceToCable(
+  point: { lat: number; lon: number },
+  cableSegments: { coordinates: number[][] }[]
+): number {
+  let minDistance = Infinity
+
+  for (const segment of cableSegments) {
+    const coords = segment.coordinates
+    for (let i = 0; i < coords.length - 1; i++) {
+      const dist = pointToSegmentDistance(
+        point,
+        {
+          p1: { lat: coords[i][1], lon: coords[i][0] },
+          p2: { lat: coords[i + 1][1], lon: coords[i + 1][0] }
+        }
+      )
+      minDistance = Math.min(minDistance, dist)
+    }
+  }
+
+  return minDistance
+}
+
+/**
+ * Determine vessel color based on proximity to cables
+ * Returns: 'green' | 'yellow' | 'red'
+ */
+export function getVesselColor(
+  point: { lat: number; lon: number },
+  cables: Map<string, { coordinates: number[][] }[]>
+): 'green' | 'yellow' | 'red' {
+  const TARGET_CABLES = {
+    GERMANY_DENMARK_3: 'germany-denmark-3',
+    ELEKTRA_GC1: 'elektra-globalconnect-1-gc1',
+    GLOBALCONNECT_KPN: 'globalconnect-kpn'
+  }
+
+  const APPROACH_THRESHOLD = 0.05 // degrees (~5.5 km)
+  const OVER_CABLE_THRESHOLD = 0.01 // degrees (~1.1 km)
+  const EXIT_THRESHOLD = 0.1 // degrees (~11 km)
+
+  // Check distance to each target cable
+  const distances = {
+    germanyDenmark3: cables.has(TARGET_CABLES.GERMANY_DENMARK_3)
+      ? getMinDistanceToCable(point, cables.get(TARGET_CABLES.GERMANY_DENMARK_3)!)
+      : Infinity,
+    elektraGc1: cables.has(TARGET_CABLES.ELEKTRA_GC1)
+      ? getMinDistanceToCable(point, cables.get(TARGET_CABLES.ELEKTRA_GC1)!)
+      : Infinity,
+    globalconnectKpn: cables.has(TARGET_CABLES.GLOBALCONNECT_KPN)
+      ? getMinDistanceToCable(point, cables.get(TARGET_CABLES.GLOBALCONNECT_KPN)!)
+      : Infinity
+  }
+
+  const minDistance = Math.min(distances.germanyDenmark3, distances.elektraGc1, distances.globalconnectKpn)
+
+  // Red: passing over any of the 3 cables
+  if (minDistance < OVER_CABLE_THRESHOLD) {
+    return 'red'
+  }
+
+  // Yellow: approaching germany-denmark-3 or in the area (but not directly over)
+  if (distances.germanyDenmark3 < APPROACH_THRESHOLD || 
+      distances.elektraGc1 < APPROACH_THRESHOLD || 
+      distances.globalconnectKpn < APPROACH_THRESHOLD) {
+    return 'yellow'
+  }
+
+  // Green: beyond exit threshold from globalconnect-kpn (leaving the area)
+  if (distances.globalconnectKpn > EXIT_THRESHOLD) {
+    return 'green'
+  }
+
+  // Default green
+  return 'green'
+}
+
 

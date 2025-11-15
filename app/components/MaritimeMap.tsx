@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { getVesselColor } from '../lib/utils'
 
 interface Infrastructure {
   id: number
@@ -41,6 +42,14 @@ interface GeoJSONFeatureCollection {
   features: GeoJSONFeature[]
 }
 
+interface TrajectoryPoint {
+  lat: number
+  lon: number
+  timestamp: string
+  mmsi: number
+  shipName: string
+}
+
 interface MaritimeMapProps {
   ships: Ship[]
   infrastructure: Infrastructure[] | GeoJSONFeatureCollection
@@ -55,6 +64,11 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick }: Ma
   const cableSourceRef = useRef<string | null>(null)
   const cablePopupRef = useRef<maplibregl.Popup | null>(null)
   const isInitializedRef = useRef(false)
+  const trajectoryMarkerRef = useRef<maplibregl.Marker | null>(null)
+  const animationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const currentTrajectoryIndexRef = useRef<number>(0)
+  const [trajectory, setTrajectory] = useState<TrajectoryPoint[]>([])
+  const cablesMapRef = useRef<Map<string, { coordinates: number[][] }[]>>(new Map())
 
   // Initialize map only once
   useEffect(() => {
@@ -174,6 +188,27 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick }: Ma
     })
   }, [ships, onVesselClick])
 
+  // Build cables map for proximity checking
+  useEffect(() => {
+    if (infrastructure && 'type' in infrastructure && infrastructure.type === 'FeatureCollection') {
+      const geoJson = infrastructure as GeoJSONFeatureCollection
+      const cablesMap = new Map<string, { coordinates: number[][] }[]>()
+      
+      // Group segments by cable_id
+      geoJson.features.forEach(feature => {
+        const cableId = feature.properties.cable_id
+        if (!cablesMap.has(cableId)) {
+          cablesMap.set(cableId, [])
+        }
+        cablesMap.get(cableId)!.push({
+          coordinates: feature.geometry.coordinates
+        })
+      })
+      
+      cablesMapRef.current = cablesMap
+    }
+  }, [infrastructure])
+
   // Update infrastructure (cables) from GeoJSON
   useEffect(() => {
     if (!map.current || !isInitializedRef.current) return
@@ -283,6 +318,156 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick }: Ma
     })
     }
   }, [infrastructure])
+
+  // Fetch trajectory data
+  useEffect(() => {
+    const fetchTrajectory = async () => {
+      try {
+        const response = await fetch('/api/trajectory')
+        if (response.ok) {
+          const data = await response.json()
+          setTrajectory(data)
+        }
+      } catch (error) {
+        console.error('Error fetching trajectory:', error)
+      }
+    }
+    fetchTrajectory()
+  }, [])
+
+  // Create ship icon SVG - boat shape
+  const createShipIcon = (color: 'green' | 'yellow' | 'red'): HTMLElement => {
+    const el = document.createElement('div')
+    el.style.width = '40px'
+    el.style.height = '40px'
+    el.style.cursor = 'pointer'
+    el.style.display = 'flex'
+    el.style.alignItems = 'center'
+    el.style.justifyContent = 'center'
+    
+    const colorMap = {
+      green: '#22c55e',
+      yellow: '#eab308',
+      red: '#ef4444'
+    }
+    
+    // Boat shape SVG - realistic boat/ship from side view
+    const svg = `
+      <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Boat hull (curved bottom) -->
+        <path d="M4 28C4 28 6 26 8 26C10 26 12 27 14 27C16 27 18 26 20 26C22 26 24 27 26 27C28 27 30 26 32 26C34 26 36 28 36 28L36 32L4 32L4 28Z" 
+              fill="${colorMap[color]}" 
+              stroke="white" 
+              stroke-width="1.5" 
+              stroke-linejoin="round"/>
+        <!-- Boat deck line -->
+        <path d="M6 26L8 24L10 25L12 24L14 25L16 24L18 25L20 24L22 25L24 24L26 25L28 24L30 25L32 24L34 26" 
+              stroke="white" 
+              stroke-width="1.5" 
+              stroke-linecap="round" 
+              stroke-linejoin="round"/>
+        <!-- Boat cabin/superstructure -->
+        <path d="M12 24L12 18L20 18L20 24L12 24Z" 
+              fill="${colorMap[color]}" 
+              stroke="white" 
+              stroke-width="1.5" 
+              opacity="0.9"/>
+        <!-- Boat cabin window -->
+        <rect x="14" y="20" width="4" height="2" fill="white" opacity="0.6"/>
+        <!-- Boat bow (front point) -->
+        <path d="M4 28L6 26L4 24Z" 
+              fill="${colorMap[color]}" 
+              stroke="white" 
+              stroke-width="1.5"/>
+        <!-- Boat stern (back) -->
+        <path d="M36 28L34 26L36 24Z" 
+              fill="${colorMap[color]}" 
+              stroke="white" 
+              stroke-width="1.5"/>
+      </svg>
+    `
+    el.innerHTML = svg
+    return el
+  }
+
+  // Animate single ship icon along trajectory
+  useEffect(() => {
+    if (!map.current || !isInitializedRef.current || trajectory.length === 0 || cablesMapRef.current.size === 0) {
+      return
+    }
+
+    // Clean up any existing animation
+    if (animationIntervalRef.current) {
+      clearInterval(animationIntervalRef.current)
+      animationIntervalRef.current = null
+    }
+    if (trajectoryMarkerRef.current) {
+      trajectoryMarkerRef.current.remove()
+      trajectoryMarkerRef.current = null
+    }
+
+    // Create initial marker at first point
+    const initialPoint = trajectory[0]
+    const initialColor = getVesselColor({ lat: initialPoint.lat, lon: initialPoint.lon }, cablesMapRef.current)
+    const icon = createShipIcon(initialColor)
+    const marker = new maplibregl.Marker({ element: icon })
+      .setLngLat([initialPoint.lon, initialPoint.lat])
+      .addTo(map.current!)
+    
+    trajectoryMarkerRef.current = marker
+    currentTrajectoryIndexRef.current = 0
+
+    // Animation function - moves ship along trajectory
+    const animate = () => {
+      if (!map.current || !trajectoryMarkerRef.current || trajectory.length === 0) return
+
+      const currentIndex = currentTrajectoryIndexRef.current
+      const point = trajectory[currentIndex]
+      
+      // Update color based on proximity
+      const color = getVesselColor({ lat: point.lat, lon: point.lon }, cablesMapRef.current)
+      
+      // Update marker position
+      trajectoryMarkerRef.current.setLngLat([point.lon, point.lat])
+      
+      // Update icon color
+      const currentElement = trajectoryMarkerRef.current.getElement()
+      const currentSvg = currentElement.querySelector('svg')
+      if (currentSvg) {
+        const colorMap = {
+          green: '#22c55e',
+          yellow: '#eab308',
+          red: '#ef4444'
+        }
+        // Update all fill colors in SVG (hull, deck, superstructure)
+        const coloredElements = currentSvg.querySelectorAll('path[fill], rect[fill]')
+        coloredElements.forEach((element) => {
+          const fill = element.getAttribute('fill')
+          // Only update if it's one of our color values (not white or transparent)
+          if (fill && fill !== 'white' && fill !== 'none' && fill !== 'transparent') {
+            element.setAttribute('fill', colorMap[color])
+          }
+        })
+      }
+
+      // Move to next point (loop back to start when reaching end)
+      currentTrajectoryIndexRef.current = (currentIndex + 1) % trajectory.length
+    }
+
+    // Start animation loop (100ms delay between points - adjust for speed)
+    animationIntervalRef.current = setInterval(animate, 100)
+
+    return () => {
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current)
+        animationIntervalRef.current = null
+      }
+      if (trajectoryMarkerRef.current) {
+        trajectoryMarkerRef.current.remove()
+        trajectoryMarkerRef.current = null
+      }
+    }
+  }, [trajectory, infrastructure])
 
   return <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
 }
