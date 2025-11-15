@@ -67,29 +67,36 @@ function hasDataChanged<T>(oldData: T[], newData: T[]): boolean {
   return false
 }
 
+interface VesselAlert {
+  id: string
+  type: 'yellow' | 'red'
+  message: string
+  timestamp: string
+  vesselName: string
+  mmsi: number
+  count: number
+}
+
 export default function Dashboard() {
   const [ships, setShips] = useState<Ship[]>([])
   const [infrastructure, setInfrastructure] = useState<Infrastructure[] | GeoJSONFeatureCollection>([])
-  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [vesselAlerts, setVesselAlerts] = useState<VesselAlert[]>([])
   const [selectedShip, setSelectedShip] = useState<Ship | null>(null)
   
   // Keep refs to previous data for comparison
   const prevShipsRef = useRef<Ship[]>([])
   const prevInfrastructureRef = useRef<Infrastructure[] | GeoJSONFeatureCollection>([])
-  const prevAlertsRef = useRef<Alert[]>([])
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [shipsRes, infraRes, alertsRes] = await Promise.all([
+        const [shipsRes, infraRes] = await Promise.all([
           fetch('/api/ships'),
-          fetch('/api/infrastructure'),
-          fetch('/api/alerts')
+          fetch('/api/infrastructure')
         ])
         
         const newShips = await shipsRes.json()
         const newInfrastructure = await infraRes.json()
-        const newAlerts = await alertsRes.json()
         
         // Only update state if data has actually changed
         if (hasDataChanged(prevShipsRef.current, newShips)) {
@@ -106,11 +113,6 @@ export default function Dashboard() {
           setInfrastructure(newInfrastructure)
           prevInfrastructureRef.current = newInfrastructure
         }
-        
-        if (hasDataChanged(prevAlertsRef.current, newAlerts)) {
-          setAlerts(newAlerts)
-          prevAlertsRef.current = newAlerts
-        }
       } catch (error) {
         console.error('Error fetching data:', error)
       }
@@ -121,12 +123,45 @@ export default function Dashboard() {
     return () => clearInterval(interval)
   }, [])
 
+  const handleVesselColorChange = (alert: VesselAlert) => {
+    setVesselAlerts(prev => {
+      // Find existing alert of the same type for the same vessel
+      const existingIndex = prev.findIndex(
+        a => a.type === alert.type && a.vesselName === alert.vesselName
+      )
+      
+      if (existingIndex >= 0) {
+        // Update existing alert count
+        const updated = [...prev]
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          count: updated[existingIndex].count + 1,
+          timestamp: alert.timestamp, // Update to latest timestamp
+          mmsi: alert.mmsi // Update MMSI in case it changed
+        }
+        return updated
+      } else {
+        // Add new alert with count 1
+        return [...prev, { ...alert, count: 1 }]
+      }
+    })
+  }
+
+  const handleClearAlerts = () => {
+    setVesselAlerts([])
+  }
+
   return (
     <div className="flex flex-col h-screen bg-slate-900">
       <Header />
       <div className="flex flex-1 overflow-hidden">
-        <AlertsFeed alerts={alerts} ships={ships} onSelectShip={setSelectedShip} />
-        <MaritimeMap ships={ships} infrastructure={infrastructure} onVesselClick={setSelectedShip} />
+        <AlertsFeed alerts={vesselAlerts} onClearAlerts={handleClearAlerts} />
+        <MaritimeMap 
+          ships={ships} 
+          infrastructure={infrastructure} 
+          onVesselClick={setSelectedShip}
+          onVesselColorChange={handleVesselColorChange}
+        />
         {selectedShip && <VesselDetails ship={selectedShip} onClose={() => setSelectedShip(null)} />}
       </div>
     </div>

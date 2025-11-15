@@ -50,13 +50,24 @@ interface TrajectoryPoint {
   shipName: string
 }
 
+interface VesselAlert {
+  id: string
+  type: 'yellow' | 'red'
+  message: string
+  timestamp: string
+  vesselName: string
+  mmsi: number
+  count: number
+}
+
 interface MaritimeMapProps {
   ships: Ship[]
   infrastructure: Infrastructure[] | GeoJSONFeatureCollection
   onVesselClick: (ship: Ship) => void
+  onVesselColorChange?: (alert: VesselAlert) => void
 }
 
-export default function MaritimeMap({ ships, infrastructure, onVesselClick }: MaritimeMapProps) {
+export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVesselColorChange }: MaritimeMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
   const shipMarkersRef = useRef<Map<number, maplibregl.Marker>>(new Map())
@@ -67,6 +78,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick }: Ma
   const trajectoryMarkerRef = useRef<maplibregl.Marker | null>(null)
   const animationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const currentTrajectoryIndexRef = useRef<number>(0)
+  const previousColorRef = useRef<'green' | 'yellow' | 'red' | null>(null)
   const [trajectory, setTrajectory] = useState<TrajectoryPoint[]>([])
   const cablesMapRef = useRef<Map<string, { coordinates: number[][] }[]>>(new Map())
 
@@ -416,6 +428,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick }: Ma
     
     trajectoryMarkerRef.current = marker
     currentTrajectoryIndexRef.current = 0
+    previousColorRef.current = initialColor
 
     // Animation function - moves ship along trajectory
     const animate = () => {
@@ -426,6 +439,33 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick }: Ma
       
       // Update color based on proximity
       const color = getVesselColor({ lat: point.lat, lon: point.lon }, cablesMapRef.current)
+      const previousColor = previousColorRef.current
+      
+      // Check for color transitions and trigger alerts
+      if (previousColor !== null && color !== previousColor && onVesselColorChange) {
+        // Only alert on transitions TO yellow or red (not from them)
+        if (color === 'yellow' && previousColor !== 'yellow') {
+          onVesselColorChange({
+            id: `alert-yellow-${point.shipName || 'Vessel'}`,
+            type: 'yellow',
+            message: 'Vessel approaching cable area',
+            timestamp: new Date().toISOString(),
+            vesselName: point.shipName || 'Vessel',
+            mmsi: point.mmsi || 0,
+            count: 1
+          })
+        } else if (color === 'red' && previousColor !== 'red') {
+          onVesselColorChange({
+            id: `alert-red-${point.shipName || 'Vessel'}`,
+            type: 'red',
+            message: 'Vessel passing over cable',
+            timestamp: new Date().toISOString(),
+            vesselName: point.shipName || 'Vessel',
+            mmsi: point.mmsi || 0,
+            count: 1
+          })
+        }
+      }
       
       // Update marker position
       trajectoryMarkerRef.current.setLngLat([point.lon, point.lat])
@@ -450,8 +490,20 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick }: Ma
         })
       }
 
-      // Move to next point (loop back to start when reaching end)
-      currentTrajectoryIndexRef.current = (currentIndex + 1) % trajectory.length
+      // Update previous color
+      previousColorRef.current = color
+
+      // Move to next point (stop at end, don't loop)
+      const nextIndex = currentIndex + 1
+      if (nextIndex >= trajectory.length) {
+        // Stop animation when reaching the end
+        if (animationIntervalRef.current) {
+          clearInterval(animationIntervalRef.current)
+          animationIntervalRef.current = null
+        }
+      } else {
+        currentTrajectoryIndexRef.current = nextIndex
+      }
     }
 
     // Start animation loop (100ms delay between points - adjust for speed)
