@@ -136,6 +136,44 @@ export async function insertSubmarineCable(
 ): Promise<number> {
   const db = getDb();
 
+  // Validate required fields
+  if (!feature.properties.id) {
+    throw new Error(`Missing id for cable: ${feature.properties.name || 'unknown'}`);
+  }
+  if (!feature.properties.name) {
+    throw new Error(`Missing name for cable: ${feature.properties.id}`);
+  }
+  if (!feature.properties.feature_id) {
+    throw new Error(`Missing feature_id for cable: ${feature.properties.id}`);
+  }
+  if (!feature.properties.coordinates || feature.properties.coordinates.length < 2) {
+    throw new Error(`Missing or invalid coordinates for cable: ${feature.properties.id}`);
+  }
+
+  const cableId = String(feature.properties.id || '');
+  const name = String(feature.properties.name || '');
+  const color = feature.properties.color ? String(feature.properties.color) : null;
+  const featureId = String(feature.properties.feature_id || '');
+  const longitude = Number(feature.properties.coordinates[0]);
+  const latitude = Number(feature.properties.coordinates[1]);
+
+  // Additional validation
+  if (!cableId || cableId === 'undefined') {
+    throw new Error(`Invalid id for cable: ${feature.properties.name || 'unknown'}`);
+  }
+  if (!name || name === 'undefined') {
+    throw new Error(`Invalid name for cable: ${cableId}`);
+  }
+  if (!featureId || featureId === 'undefined') {
+    throw new Error(`Invalid feature_id for cable: ${cableId}`);
+  }
+  if (isNaN(longitude) || longitude === undefined || longitude === null) {
+    throw new Error(`Invalid longitude for cable: ${cableId} (value: ${feature.properties.coordinates[0]})`);
+  }
+  if (isNaN(latitude) || latitude === undefined || latitude === null) {
+    throw new Error(`Invalid latitude for cable: ${cableId} (value: ${feature.properties.coordinates[1]})`);
+  }
+
   const [result] = await db`
     INSERT INTO infrastructure (
       cable_id,
@@ -145,12 +183,12 @@ export async function insertSubmarineCable(
       representative_longitude,
       representative_latitude
     ) VALUES (
-      ${feature.properties.id},
-      ${feature.properties.name},
-      ${feature.properties.color || null},
-      ${feature.properties.feature_id},
-      ${feature.properties.coordinates[0]}, -- longitude
-      ${feature.properties.coordinates[1]} -- latitude
+      ${cableId},
+      ${name},
+      ${color},
+      ${featureId},
+      ${longitude},
+      ${latitude}
     )
     ON CONFLICT (cable_id) DO UPDATE SET
       name = EXCLUDED.name,
@@ -221,10 +259,25 @@ function extractLineSegments(coordinates: number[][]): Array<{
 }> {
   const lineSegments: Array<{ start: [number, number]; end: [number, number] }> = [];
   
+  if (!coordinates || coordinates.length < 2) {
+    return lineSegments; // Return empty array if not enough coordinates
+  }
+  
   for (let i = 0; i < coordinates.length - 1; i++) {
+    const start = coordinates[i];
+    const end = coordinates[i + 1];
+    
+    // Validate coordinates
+    if (!start || start.length < 2 || start[0] === undefined || start[1] === undefined) {
+      continue; // Skip invalid start point
+    }
+    if (!end || end.length < 2 || end[0] === undefined || end[1] === undefined) {
+      continue; // Skip invalid end point
+    }
+    
     lineSegments.push({
-      start: [coordinates[i][0], coordinates[i][1]],
-      end: [coordinates[i + 1][0], coordinates[i + 1][1]],
+      start: [Number(start[0]), Number(start[1])],
+      end: [Number(end[0]), Number(end[1])],
     });
   }
   
@@ -246,7 +299,14 @@ export async function insertLineSegmentsForSegment(segmentId: number): Promise<n
     throw new Error(`Segment ${segmentId} not found`);
   }
   
-  const coordinates = segment.coordinates as number[][];
+  // Parse coordinates - they may be stored as JSON string or already parsed
+  let coordinates: number[][];
+  if (typeof segment.coordinates === 'string') {
+    coordinates = JSON.parse(segment.coordinates);
+  } else {
+    coordinates = segment.coordinates as number[][];
+  }
+  
   const lineSegments = extractLineSegments(coordinates);
   
   // Delete existing line segments for this segment (in case of update)
@@ -257,6 +317,26 @@ export async function insertLineSegmentsForSegment(segmentId: number): Promise<n
   // Insert each line segment
   for (let i = 0; i < lineSegments.length; i++) {
     const line = lineSegments[i];
+    
+    // Validate and convert coordinates
+    const startLon = Number(line.start[0]);
+    const startLat = Number(line.start[1]);
+    const endLon = Number(line.end[0]);
+    const endLat = Number(line.end[1]);
+    
+    if (isNaN(startLon) || startLon === undefined || startLon === null) {
+      throw new Error(`Invalid start longitude for segment ${segmentId}, line ${i}: ${line.start[0]}`);
+    }
+    if (isNaN(startLat) || startLat === undefined || startLat === null) {
+      throw new Error(`Invalid start latitude for segment ${segmentId}, line ${i}: ${line.start[1]}`);
+    }
+    if (isNaN(endLon) || endLon === undefined || endLon === null) {
+      throw new Error(`Invalid end longitude for segment ${segmentId}, line ${i}: ${line.end[0]}`);
+    }
+    if (isNaN(endLat) || endLat === undefined || endLat === null) {
+      throw new Error(`Invalid end latitude for segment ${segmentId}, line ${i}: ${line.end[1]}`);
+    }
+    
     await db`
       INSERT INTO submarine_cable_line_segments (
         segment_id,
@@ -268,10 +348,10 @@ export async function insertLineSegmentsForSegment(segmentId: number): Promise<n
       ) VALUES (
         ${segmentId},
         ${i},
-        ${line.start[0]},
-        ${line.start[1]},
-        ${line.end[0]},
-        ${line.end[1]}
+        ${startLon},
+        ${startLat},
+        ${endLon},
+        ${endLat}
       )
     `;
   }
