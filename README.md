@@ -11,14 +11,14 @@ flowchart TD
 subgraph DS[Data sources]
     AIS[AIS-Data-In]
     RAD[Radar]
-    SAT[Satellite Image\n(aggregated, 2 min delay)]
+    SAT[Satellite Imagery]
     PR[Passive Radar]
     AI[Aerial Imagery]
 end
 
 %% --- STATIC INFRA -----------------------------------------------------------------
 
-INFRA_STATIC[Infrastructure (static)]
+INFRA_STATIC[Infrastructure]
 
 %% --- MATCHING + RISK ENGINE --------------------------------------------------------
 
