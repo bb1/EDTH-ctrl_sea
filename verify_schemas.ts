@@ -99,16 +99,16 @@ async function verifyAisSchema() {
   const db = getAisDb();
   
   try {
-    // Check if ais_messages table exists
-    const [aisMessagesTable] = await db`
+    // Check if object table exists
+    const [objectTable] = await db`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
-        AND table_name = 'ais_messages'
+        AND table_name = 'object'
       ) as exists
     `;
     
-    console.log(`✅ ais_messages table: ${aisMessagesTable.exists ? 'EXISTS' : '❌ MISSING'}`);
+    console.log(`✅ object table: ${objectTable.exists ? 'EXISTS' : '❌ MISSING'}`);
     
     // Check if position_reports table exists
     const [positionReportsTable] = await db`
@@ -121,16 +121,16 @@ async function verifyAisSchema() {
     
     console.log(`✅ position_reports table: ${positionReportsTable.exists ? 'EXISTS' : '❌ MISSING'}`);
     
-    // Check if data_link_management_messages table exists
-    const [dlmTable] = await db`
+    // Check if ship_metadata table exists
+    const [shipMetadataTable] = await db`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
-        AND table_name = 'data_link_management_messages'
+        AND table_name = 'ship_metadata'
       ) as exists
     `;
     
-    console.log(`✅ data_link_management_messages table: ${dlmTable.exists ? 'EXISTS' : '❌ MISSING'}`);
+    console.log(`✅ ship_metadata table: ${shipMetadataTable.exists ? 'EXISTS' : '❌ MISSING'}`);
     
     // Check if recent_position_reports view exists
     const [recentView] = await db`
@@ -143,30 +143,35 @@ async function verifyAisSchema() {
     
     console.log(`✅ recent_position_reports view: ${recentView.exists ? 'EXISTS' : '❌ MISSING'}`);
     
-    // Get column information for ais_messages table
-    if (aisMessagesTable.exists) {
+    // Get column information for object table
+    if (objectTable.exists) {
       const columns = await db`
         SELECT column_name, data_type 
         FROM information_schema.columns 
-        WHERE table_name = 'ais_messages'
+        WHERE table_name = 'object'
         ORDER BY ordinal_position
       `;
       
-      console.log(`\n📊 ais_messages table columns (${columns.length}):`);
+      console.log(`\n📊 object table columns (${columns.length}):`);
       columns.forEach((col: any) => {
         console.log(`   - ${col.column_name} (${col.data_type})`);
       });
     }
     
     // Count records if tables exist
-    if (aisMessagesTable.exists) {
-      const [count] = await db`SELECT COUNT(*) as count FROM ais_messages`;
-      console.log(`\n📈 Records in ais_messages: ${count.count}`);
+    if (objectTable.exists) {
+      const [count] = await db`SELECT COUNT(*) as count FROM object`;
+      console.log(`\n📈 Records in object: ${count.count}`);
     }
     
     if (positionReportsTable.exists) {
       const [count] = await db`SELECT COUNT(*) as count FROM position_reports`;
       console.log(`📈 Records in position_reports: ${count.count}`);
+    }
+    
+    if (shipMetadataTable.exists) {
+      const [count] = await db`SELECT COUNT(*) as count FROM ship_metadata`;
+      console.log(`📈 Records in ship_metadata: ${count.count}`);
     }
     
   } catch (error) {
@@ -195,4 +200,3 @@ async function main() {
 }
 
 main();
-
