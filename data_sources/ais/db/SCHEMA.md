@@ -10,7 +10,7 @@ The schema consists of **3 main tables** that work together to store and organiz
 
 ### 1. `object` - Main Object Archive
 
-**Purpose:** Central table that stores all incoming AIS object metadata. Each record represents the object that emitted the message.
+**Purpose:** Central table that stores all incoming AIS object metadata that we decided to persist (position reports and ship metadata messages).
 
 **Key Fields:**
 - `id` - UUID identifier for each object message
@@ -51,20 +51,19 @@ The schema consists of **3 main tables** that work together to store and organiz
 
 ---
 
-### 3. `data_link_management_messages` - Communication Management
+### 3. `ship_metadata` - Static Vessel Information
 
-**Purpose:** Stores data link management messages that control AIS communication parameters.
+**Purpose:** Stores static AIS information (message types 5 and 24) that describe the vessel rather than its current position.
 
 **Key Fields:**
 - `object_id` - Links back to the main `object` table
-- `mmsi` - Ship identifier
-- `location` - Optional PostGIS point geometry when position metadata is available
-- `message_id` - Type of management message
-- `repeat_indicator` - Message repeat status
-- `user_id` - User/ship identifier
-- `valid` - Whether the message is valid
+- `mmsi` - Ship identifier (unique per vessel)
+- `ship_name` - Latest reported vessel name
+- `callsign` - Vessel callsign
+- `ship_type` - AIS vessel type code
+- `dimension_to_*` - Hull dimensions reported in AIS static data (bow, stern, port, starboard)
 
-**Use Case:** Tracking communication management and network coordination between AIS stations.
+**Use Case:** Quickly answering questions about a vessel (name, callsign, size, type) and joining that metadata with live position reports.
 
 ---
 
@@ -72,11 +71,11 @@ The schema consists of **3 main tables** that work together to store and organiz
 
 ```
 object (1) ──< (many) position_reports
-object (1) ──< (many) data_link_management_messages
+object (1) ──< (many) ship_metadata
 ```
 
-- Each message in `object` can have **one** corresponding record in `position_reports` (if it's a position report)
-- Each message in `object` can have **one** corresponding record in `data_link_management_messages` (if it's a DLM message)
+- Each message in `object` can have **one** corresponding record in `position_reports` (if it's a qualifying position report: AIS types 1, 2, 3, 18, 19, or 27)
+- Each message in `object` can have **one** corresponding record in `ship_metadata` (if it's a static data message: AIS types 5 or 24)
 - Foreign keys ensure data integrity: if an object is deleted, related records are automatically removed (CASCADE)
 
 ---
@@ -99,10 +98,9 @@ The schema includes indexes on commonly queried fields for fast lookups:
 - `location` (GIST) - Spatial searches and bounding box queries
 - `created_at` - Recent data queries
 
-**`data_link_management_messages` indexes:**
-- `mmsi` - Find DLM messages for a ship
-- `time_utc` - Time-based filtering
-- `location` (GIST) - Optional spatial lookups when geometry exists
+**`ship_metadata` indexes:**
+- `mmsi` (UNIQUE) - One metadata record per vessel
+- `callsign` - Lookup by callsign
 
 ### View: `recent_position_reports`
 
@@ -127,8 +125,9 @@ SELECT * FROM recent_position_reports;
 1. **AIS message arrives** from the stream
 2. **Insert into `object`** - Basic metadata stored
 3. **Application code extracts data** based on message type:
-   - If `PositionReport` → Insert into `position_reports` table
-   - If `DataLinkManagementMessage` → Insert into `data_link_management_messages` table
+   - If AIS type is `1, 2, 3, 18, 19, 27` → Insert into `position_reports` table
+   - If AIS type is `5 or 24` → Upsert into `ship_metadata` table
+   - All other message types are ignored at ingestion time to keep the dataset focused
 
 **Note:** Data extraction happens in application code (`db.ts`), not database triggers, for better control and flexibility.
 
@@ -166,6 +165,15 @@ SELECT * FROM recent_position_reports;
 SELECT * FROM object 
 WHERE type = 'PositionReport'
 ORDER BY time_utc DESC;
+```
+
+### Look up vessel metadata
+```sql
+SELECT ship_name, callsign, ship_type,
+       dimension_to_bow, dimension_to_stern,
+       dimension_to_port, dimension_to_starboard
+FROM ship_metadata
+WHERE mmsi = 636023108;
 ```
 
 ---

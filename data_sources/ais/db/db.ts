@@ -113,7 +113,19 @@ export interface AISMessageMetadata {
   ShipName: string;
   latitude: number;
   longitude: number;
+  Latitude?: number;
+  Longitude?: number;
   time_utc: string;
+  MessageType?: number;
+  messageType?: number;
+  CallSign?: string;
+  Callsign?: string;
+  ShipType?: number;
+  VesselType?: number;
+  DimensionToBow?: number;
+  DimensionToStern?: number;
+  DimensionToPort?: number;
+  DimensionToStarboard?: number;
 }
 
 export interface AISMessage {
@@ -122,11 +134,148 @@ export interface AISMessage {
   MetaData: AISMessageMetadata;
 }
 
+const POSITION_MESSAGE_TYPES = new Set<number>([1, 2, 3, 18, 19, 27]);
+const SHIP_METADATA_MESSAGE_TYPES = new Set<number>([5, 24]);
+const POSITION_MESSAGE_NAMES = new Set<string>([
+  'PositionReport',
+  'PositionReportClassA',
+  'PositionReportClassAAssignedSchedule',
+  'PositionReportClassAResponseToInterrogation',
+  'StandardClassBCSPositionReport',
+  'ExtendedClassBPositionReport',
+  'LongRangeAISBroadcastMessage',
+]);
+const SHIP_METADATA_MESSAGE_NAMES = new Set<string>([
+  'ShipStaticData',
+  'ShipStaticDataPartA',
+  'ShipStaticDataPartB',
+  'StaticDataReport',
+  'VoyageRelatedData',
+]);
+
+type MessagePayload = Record<string, any> | null;
+
+function pickNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === 'number' && !Number.isNaN(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return null;
+}
+
+function pickString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+  }
+  return null;
+}
+
+function getMessageTypeId(message: AISMessage): number | null {
+  const meta = message.MetaData as Record<string, any>;
+  const candidates = [
+    meta?.MessageType,
+    meta?.messageType,
+    (message.Message as Record<string, any>)?.MessageType,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number' && !Number.isNaN(candidate)) {
+      return candidate;
+    }
+    if (typeof candidate === 'string') {
+      const parsed = Number(candidate);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
+function isPositionMessage(typeId: number | null, typeName: string) {
+  if (typeId !== null && POSITION_MESSAGE_TYPES.has(typeId)) {
+    return true;
+  }
+  return POSITION_MESSAGE_NAMES.has(typeName);
+}
+
+function isShipMetadataMessage(typeId: number | null, typeName: string) {
+  if (typeId !== null && SHIP_METADATA_MESSAGE_TYPES.has(typeId)) {
+    return true;
+  }
+  return SHIP_METADATA_MESSAGE_NAMES.has(typeName);
+}
+
+function getPositionPayload(message: AISMessage): MessagePayload {
+  const payloads = [
+    message.Message?.PositionReport,
+    message.Message?.PositionReportClassA,
+    message.Message?.PositionReportClassAAssignedSchedule,
+    message.Message?.PositionReportClassAResponseToInterrogation,
+    message.Message?.StandardClassBCSPositionReport,
+    message.Message?.ExtendedClassBPositionReport,
+    message.Message?.LongRangeAISBroadcastMessage,
+  ];
+
+  for (const payload of payloads) {
+    if (payload) {
+      return payload;
+    }
+  }
+  return null;
+}
+
+function getShipMetadataPayload(message: AISMessage): MessagePayload {
+  const payloads = [
+    message.Message?.ShipStaticData,
+    message.Message?.ShipStaticDataPartA,
+    message.Message?.ShipStaticDataPartB,
+    message.Message?.StaticDataReport,
+    message.Message?.VoyageRelatedData,
+  ];
+
+  for (const payload of payloads) {
+    if (payload) {
+      return payload;
+    }
+  }
+  return null;
+}
+
 /**
  * Insert AIS object message into database
  */
-export async function insertObject(message: AISMessage): Promise<string> {
+export async function insertObject(
+  message: AISMessage
+): Promise<string | null> {
   const db = getDb();
+  const metadata = message.MetaData as Record<string, any>;
+  const messageTypeId = getMessageTypeId(message);
+  const shouldInsertPosition = isPositionMessage(
+    messageTypeId,
+    message.MessageType
+  );
+  const shouldInsertShipMetadata = isShipMetadataMessage(
+    messageTypeId,
+    message.MessageType
+  );
+
+  if (!shouldInsertPosition && !shouldInsertShipMetadata) {
+    return null;
+  }
 
   // Parse time_utc string to timestamp
   const timeUtc = new Date(message.MetaData.time_utc);
@@ -150,19 +299,21 @@ export async function insertObject(message: AISMessage): Promise<string> {
   const objectId: string = result.id;
 
   // Extract and insert into specialized tables based on message type
-  if (
-    message.MessageType === 'PositionReport' &&
-    message.Message.PositionReport
-  ) {
-    const pr = message.Message.PositionReport;
-    const latitude =
-      pr.Latitude ??
-      message.MetaData.latitude ??
-      null;
-    const longitude =
-      pr.Longitude ??
-      message.MetaData.longitude ??
-      null;
+  if (shouldInsertPosition) {
+    const pr = getPositionPayload(message) ?? {};
+    const latitude = pickNumber(
+      pr.Latitude,
+      pr.Lat,
+      metadata.latitude,
+      metadata.Latitude
+    );
+    const longitude = pickNumber(
+      pr.Longitude,
+      pr.Lon,
+      pr.Long,
+      metadata.longitude,
+      metadata.Longitude
+    );
 
     if (latitude === null || longitude === null) {
       console.warn(
@@ -190,54 +341,98 @@ export async function insertObject(message: AISMessage): Promise<string> {
           ${message.MetaData.MMSI},
           ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326),
           ${timeUtc},
-          ${pr.Cog || null},
-          ${pr.Sog || null},
-          ${pr.TrueHeading || null},
-          ${pr.NavigationalStatus || null},
-          ${pr.RateOfTurn || null},
-          ${pr.PositionAccuracy || null},
-          ${pr.Raim || null},
-          ${pr.SpecialManoeuvreIndicator || null},
-          ${pr.Timestamp || null},
-          ${pr.CommunicationState || null}
+          ${pr.Cog ?? null},
+          ${pr.Sog ?? null},
+          ${pr.TrueHeading ?? null},
+          ${pr.NavigationalStatus ?? null},
+          ${pr.RateOfTurn ?? null},
+          ${pr.PositionAccuracy ?? null},
+          ${pr.Raim ?? null},
+          ${pr.SpecialManoeuvreIndicator ?? null},
+          ${pr.Timestamp ?? null},
+          ${pr.CommunicationState ?? null}
         )
       `;
     }
   }
 
-  if (
-    message.MessageType === 'DataLinkManagementMessage' &&
-    message.Message.DataLinkManagementMessage
-  ) {
-    const dlm = message.Message.DataLinkManagementMessage;
+  if (shouldInsertShipMetadata) {
+    const shipStatic = getShipMetadataPayload(message) ?? {};
+    const shipName = pickString(
+      shipStatic.ShipName,
+      shipStatic.Name,
+      metadata.ShipName
+    );
+    const callsign = pickString(
+      shipStatic.CallSign,
+      shipStatic.Callsign,
+      metadata.CallSign,
+      metadata.Callsign
+    );
+    const shipType = pickNumber(
+      shipStatic.Type,
+      shipStatic.ShipType,
+      shipStatic.VesselType,
+      metadata.ShipType,
+      metadata.VesselType
+    );
+    const dimensionToBow = pickNumber(
+      shipStatic.DimensionToBow,
+      shipStatic.Dimension?.ToBow,
+      shipStatic.Dimension?.Bow,
+      metadata.DimensionToBow
+    );
+    const dimensionToStern = pickNumber(
+      shipStatic.DimensionToStern,
+      shipStatic.Dimension?.ToStern,
+      shipStatic.Dimension?.Stern,
+      metadata.DimensionToStern
+    );
+    const dimensionToPort = pickNumber(
+      shipStatic.DimensionToPort,
+      shipStatic.Dimension?.ToPort,
+      shipStatic.Dimension?.Port,
+      metadata.DimensionToPort
+    );
+    const dimensionToStarboard = pickNumber(
+      shipStatic.DimensionToStarboard,
+      shipStatic.Dimension?.ToStarboard,
+      shipStatic.Dimension?.Starboard,
+      metadata.DimensionToStarboard
+    );
+
     await db`
-      INSERT INTO data_link_management_messages (
+      INSERT INTO ship_metadata (
         object_id,
         mmsi,
-        location,
-        time_utc,
-        message_id,
-        repeat_indicator,
-        spare,
-        user_id,
-        valid
+        ship_name,
+        callsign,
+        ship_type,
+        dimension_to_bow,
+        dimension_to_stern,
+        dimension_to_port,
+        dimension_to_starboard
       ) VALUES (
         ${objectId},
         ${message.MetaData.MMSI},
-        ST_SetSRID(
-          ST_MakePoint(
-            ${message.MetaData.longitude ?? null},
-            ${message.MetaData.latitude ?? null}
-          ),
-          4326
-        ),
-        ${timeUtc},
-        ${dlm.MessageID || null},
-        ${dlm.RepeatIndicator || null},
-        ${dlm.Spare || null},
-        ${dlm.UserID || null},
-        ${dlm.Valid || null}
+        ${shipName},
+        ${callsign},
+        ${shipType},
+        ${dimensionToBow},
+        ${dimensionToStern},
+        ${dimensionToPort},
+        ${dimensionToStarboard}
       )
+      ON CONFLICT (mmsi) DO UPDATE SET
+        object_id = EXCLUDED.object_id,
+        ship_name = COALESCE(EXCLUDED.ship_name, ship_metadata.ship_name),
+        callsign = COALESCE(EXCLUDED.callsign, ship_metadata.callsign),
+        ship_type = COALESCE(EXCLUDED.ship_type, ship_metadata.ship_type),
+        dimension_to_bow = COALESCE(EXCLUDED.dimension_to_bow, ship_metadata.dimension_to_bow),
+        dimension_to_stern = COALESCE(EXCLUDED.dimension_to_stern, ship_metadata.dimension_to_stern),
+        dimension_to_port = COALESCE(EXCLUDED.dimension_to_port, ship_metadata.dimension_to_port),
+        dimension_to_starboard = COALESCE(EXCLUDED.dimension_to_starboard, ship_metadata.dimension_to_starboard),
+        updated_at = NOW()
     `;
   }
 

@@ -52,29 +52,25 @@ CREATE INDEX IF NOT EXISTS idx_position_reports_time_utc ON position_reports(tim
 CREATE INDEX IF NOT EXISTS idx_position_reports_location ON position_reports USING GIST (location);
 CREATE INDEX IF NOT EXISTS idx_position_reports_created_at ON position_reports(created_at);
 
--- Table for data link management messages
-CREATE TABLE IF NOT EXISTS data_link_management_messages (
+-- Table for ship metadata derived from static AIS messages
+CREATE TABLE IF NOT EXISTS ship_metadata (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     object_id UUID REFERENCES object(id) ON DELETE CASCADE,
     mmsi BIGINT NOT NULL,
-    location geometry(Point, 4326),
-    time_utc TIMESTAMPTZ NOT NULL,
-    
-    -- Data link management specific fields
-    message_id INTEGER,
-    repeat_indicator INTEGER,
-    spare INTEGER,
-    user_id BIGINT,
-    valid BOOLEAN,
-    
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    ship_name VARCHAR(255),
+    callsign VARCHAR(50),
+    ship_type INTEGER,
+    dimension_to_bow INTEGER,
+    dimension_to_stern INTEGER,
+    dimension_to_port INTEGER,
+    dimension_to_starboard INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Indexes for data link management messages
-CREATE INDEX IF NOT EXISTS idx_dlm_messages_mmsi ON data_link_management_messages(mmsi);
-CREATE INDEX IF NOT EXISTS idx_dlm_messages_time_utc ON data_link_management_messages(time_utc);
-CREATE INDEX IF NOT EXISTS idx_dlm_messages_location ON data_link_management_messages USING GIST (location);
-CREATE INDEX IF NOT EXISTS idx_dlm_messages_created_at ON data_link_management_messages(created_at);
+-- Ensure one metadata record per MMSI and allow fast lookups
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ship_metadata_mmsi ON ship_metadata(mmsi);
+CREATE INDEX IF NOT EXISTS idx_ship_metadata_callsign ON ship_metadata(callsign);
 
 -- View for recent position reports (last 24 hours)
 CREATE OR REPLACE VIEW recent_position_reports AS

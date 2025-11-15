@@ -86,7 +86,17 @@ function connect(): void {
         // Save to database
         try {
           const objectId = await insertObject(aisMessage);
-          console.log(`💾 Saved object to database (ID: ${objectId})`);
+          if (objectId) {
+            console.log(`💾 Saved object to database (ID: ${objectId})`);
+          } else {
+            const metaType =
+              (aisMessage.MetaData as Record<string, any>)?.MessageType ??
+              (aisMessage.MetaData as Record<string, any>)?.messageType ??
+              'unknown';
+            console.log(
+              `⚠️ Skipped AIS message type ${metaType} (${aisMessage.MessageType})`
+            );
+          }
         } catch (dbError) {
           console.error('❌ Error saving to database:', dbError);
           // Continue processing even if DB write fails
