@@ -10,7 +10,7 @@ flowchart TD
 
 subgraph DS[Data sources]
     AIS[AIS-Data-In]
-    RAD[Radar (Mocked)]
+    RAD[Radar]
     SAT[Satellite Image\n(aggregated, 2 min delay)]
     PR[Passive Radar]
     AI[Aerial Imagery]
