@@ -2,7 +2,7 @@
   "name": "edth-ctrl-sea",
   "version": "1.0.0",
   "scripts": {
-    "dev": "next dev",
+    "dev": "fnm exec --using=20 -- next dev || next dev",
     "build": "next build",
     "start": "next start",
     "stream:ais": "bun data_sources/ais/stream.ts",
@@ -12,11 +12,12 @@
     "show:line-segments-example": "bun data_sources/infrastructure/db/show_specific_example.ts"
   },
   "dependencies": {
-    "next": "^14.0.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "lucide-react": "^0.292.0",
     "maplibre-gl": "^4.0.0",
-    "lucide-react": "^0.292.0"
+    "next": "^14.0.0",
+    "postgres": "^3.4.7",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0",
