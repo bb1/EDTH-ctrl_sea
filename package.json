@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "stream:ais": "bun data_sources/ais/stream.ts"
+    "stream:ais": "bun data_sources/ais/stream.ts",
+    "import:cables": "bun data_sources/infrastructure/db/import.ts",
+    "populate:line-segments": "bun data_sources/infrastructure/db/populate_line_segments.ts",
+    "show:line-segments-example": "bun data_sources/infrastructure/db/show_specific_example.ts"
   },
   "dependencies": {
     "postgres": "^3.4.3"
