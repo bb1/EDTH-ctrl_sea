@@ -92,13 +92,13 @@ Data on critical maritime infrastructure, such as ports, oil rigs, and naval bas
 Indicators:
 - 0.5 angle of approach to critical infrastructure equals ~90 degrees
 - 0.15 Current proximity to critical infrastructure (within 100m)
-- 0.1 * Amount of historical proximity
+- 0.05 Amount of historical proximity
 - 0.1 * Duration close to critical infrastructure
 - 0.15 * Multiple trips close to the same infrastructure
 - 0.01 Type of vessel
 - 0.2 Speed of vessel (slowing down close to infrastructure)
 - 0.5 AIS signal status (on/off)
-- 0.5 Gaps in AIS data 
+- 0.5 Gaps in AIS data
 - 0.2 Flag (RU, CN)
 
 Calculate a risk score based on these indicators using a weighted formula.
