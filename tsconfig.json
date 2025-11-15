@@ -2,18 +2,36 @@
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
-    "lib": ["ESNext", "DOM"],
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
     "moduleResolution": "bundler",
     "types": [],
-    "jsx": "react-jsx",
+    "jsx": "preserve",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+    "noEmit": true,
+    "incremental": true,
+    "isolatedModules": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
-  "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
-
