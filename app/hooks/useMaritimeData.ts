@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fetchMaritimeData, checkBackendConnection } from '../lib/api';
 import { useDataSource } from '../contexts/DataSourceContext';
+import { getFlagFromMMSI } from '../lib/utils';
 import type { MaritimeData, Ship } from '../lib/types';
 
 const REFRESH_INTERVAL = 5000; // 5 seconds
@@ -57,7 +58,7 @@ export function useMaritimeData() {
                   id: mmsi, // Use MMSI as ID for consistency
                   mmsi: mmsi.toString(),
                   name: point.shipName || 'Unknown',
-                  flag: 'Unknown',
+                  flag: getFlagFromMMSI(mmsi),
                   origin: 'Unknown',
                   destination: 'Unknown',
                   lat: point.lat || 0,
@@ -86,7 +87,7 @@ export function useMaritimeData() {
                   id: alert.ship_id,
                   mmsi: alert.ship_id.toString(),
                   name: alert.vessel_name || 'Unknown',
-                  flag: 'Unknown',
+                  flag: getFlagFromMMSI(alert.ship_id),
                   origin: 'Unknown',
                   destination: 'Unknown',
                   lat: 0, // Position unknown, will be updated when trajectory data arrives

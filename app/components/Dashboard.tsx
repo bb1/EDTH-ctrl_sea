@@ -6,7 +6,7 @@ import MaritimeMap from './MaritimeMap';
 import { AlertsFeed } from './AlertsFeed';
 import { VesselDetails } from './VesselDetails';
 import { useMaritimeData } from '../hooks/useMaritimeData';
-import { exportAlertsToCSV, downloadCSV } from '../lib/utils';
+import { exportAlertsToCSV, downloadCSV, getFlagFromMMSI } from '../lib/utils';
 import type { Ship, Alert } from '../lib/types';
 
 // Helper function to deduplicate alerts by ship_id and alert_type
@@ -88,7 +88,7 @@ export function Dashboard() {
             id: alert.ship_id,
             mmsi: alert.ship_id.toString(),
             name: alert.vessel_name,
-            flag: 'Unknown',
+            flag: getFlagFromMMSI(alert.ship_id),
             origin: 'Unknown',
             destination: 'Unknown',
             lat: 0, // Will be updated when real data loads

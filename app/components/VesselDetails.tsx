@@ -1,8 +1,9 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { X, MapPin, Navigation2, Clock, Flag, Ship as ShipIcon, AlertCircle, Tag } from 'lucide-react';
 import type { Ship, Alert } from '../lib/types';
-import { getRiskColor, formatTimestamp, formatVelocity, getRiskLevel } from '../lib/utils';
+import { getRiskColor, formatTimestamp, formatVelocity, getRiskLevel, getFlagImageUrl, getFlagEmoji } from '../lib/utils';
 
 interface VesselDetailsProps {
   ship: Ship | null;
@@ -12,6 +13,13 @@ interface VesselDetailsProps {
 }
 
 export function VesselDetails({ ship, alerts, onClose, onDismissAlerts }: VesselDetailsProps) {
+  const [flagImageError, setFlagImageError] = useState(false);
+
+  // Reset flag image error when ship changes
+  useEffect(() => {
+    setFlagImageError(false);
+  }, [ship?.flag]);
+
   if (!ship) {
     return (
       <div className="flex flex-col h-full bg-slate-800 border-l border-slate-700 items-center justify-center px-6">
@@ -78,7 +86,25 @@ export function VesselDetails({ ship, alerts, onClose, onDismissAlerts }: Vessel
             <div className="flex items-center gap-2 text-sm">
               <Flag size={16} className="text-slate-500" />
               <span className="text-slate-400">Flag:</span>
-              <span className="text-slate-100 font-medium">{ship.flag || 'Unknown'}</span>
+              <div className="flex items-center gap-2">
+                {ship.flag && ship.flag !== 'Unknown' ? (
+                  <>
+                    {!flagImageError && getFlagImageUrl(ship.flag) ? (
+                      <img 
+                        src={getFlagImageUrl(ship.flag, 'w20')!}
+                        alt={ship.flag}
+                        className="w-5 h-3.5 object-cover rounded-sm border border-slate-600"
+                        onError={() => setFlagImageError(true)}
+                      />
+                    ) : (
+                      <span className="text-base">{getFlagEmoji(ship.flag)}</span>
+                    )}
+                    <span className="text-slate-100 font-medium">{ship.flag}</span>
+                  </>
+                ) : (
+                  <span className="text-slate-100 font-medium">Unknown</span>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-2 text-sm">
               <Tag size={16} className="text-slate-500" />

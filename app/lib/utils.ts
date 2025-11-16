@@ -3,6 +3,234 @@
 import type { Ship, RiskLevel, Alert } from './types';
 
 /**
+ * Get country flag code from MMSI (Maritime Mobile Service Identity)
+ * The first 3 digits of MMSI represent the MID (Maritime Identification Digits)
+ * which identifies the country of registration
+ */
+export function getFlagFromMMSI(mmsi: string | number): string {
+  const mmsiStr = mmsi.toString();
+  if (mmsiStr.length < 3) {
+    return 'Unknown';
+  }
+  
+  // Extract MID (first 3 digits)
+  const mid = parseInt(mmsiStr.substring(0, 3));
+  
+  // MID to country code mapping (ISO 3166-1 alpha-2)
+  // Common maritime countries
+  const midToCountry: Record<number, string> = {
+    // Russia
+    273: 'RU',
+    274: 'RU',
+    275: 'RU',
+    276: 'RU',
+    277: 'RU',
+    278: 'RU',
+    279: 'RU',
+    
+    // China
+    412: 'CN',
+    413: 'CN',
+    414: 'CN',
+    415: 'CN',
+    416: 'CN',
+    417: 'CN',
+    418: 'CN',
+    419: 'CN',
+    
+    // United States
+    338: 'US',
+    339: 'US',
+    340: 'US',
+    341: 'US',
+    342: 'US',
+    343: 'US',
+    344: 'US',
+    345: 'US',
+    346: 'US',
+    347: 'US',
+    348: 'US',
+    349: 'US',
+    350: 'US',
+    351: 'US',
+    352: 'US',
+    353: 'US',
+    354: 'US',
+    355: 'US',
+    356: 'US',
+    357: 'US',
+    
+    // United Kingdom
+    232: 'GB',
+    233: 'GB',
+    234: 'GB',
+    235: 'GB',
+    
+    // Germany
+    211: 'DE',
+    212: 'DE',
+    213: 'DE',
+    214: 'DE',
+    215: 'DE',
+    216: 'DE',
+    217: 'DE',
+    218: 'DE',
+    
+    // Denmark
+    219: 'DK',
+    220: 'DK',
+    221: 'DK',
+    
+    // France
+    226: 'FR',
+    227: 'FR',
+    228: 'FR',
+    
+    // Netherlands
+    244: 'NL',
+    245: 'NL',
+    246: 'NL',
+    247: 'NL',
+    248: 'NL',
+    
+    // Norway
+    257: 'NO',
+    258: 'NO',
+    259: 'NO',
+    
+    // Sweden
+    265: 'SE',
+    266: 'SE',
+    267: 'SE',
+    
+    // Spain
+    224: 'ES',
+    225: 'ES',
+    
+    // Italy
+    247: 'IT',
+    248: 'IT',
+    249: 'IT',
+    
+    // Greece
+    237: 'GR',
+    238: 'GR',
+    239: 'GR',
+    240: 'GR',
+    241: 'GR',
+    
+    // Japan
+    431: 'JP',
+    432: 'JP',
+    433: 'JP',
+    434: 'JP',
+    435: 'JP',
+    436: 'JP',
+    437: 'JP',
+    
+    // South Korea
+    440: 'KR',
+    441: 'KR',
+    442: 'KR',
+    443: 'KR',
+    444: 'KR',
+    445: 'KR',
+    446: 'KR',
+    447: 'KR',
+    
+    // Singapore
+    563: 'SG',
+    564: 'SG',
+    565: 'SG',
+    566: 'SG',
+    567: 'SG',
+    
+    // India
+    419: 'IN',
+    420: 'IN',
+    421: 'IN',
+    422: 'IN',
+    423: 'IN',
+    424: 'IN',
+    425: 'IN',
+    426: 'IN',
+    427: 'IN',
+    428: 'IN',
+    
+    // Brazil
+    710: 'BR',
+    711: 'BR',
+    712: 'BR',
+    713: 'BR',
+    714: 'BR',
+    715: 'BR',
+    716: 'BR',
+    717: 'BR',
+    718: 'BR',
+    719: 'BR',
+    
+    // Canada
+    316: 'CA',
+    
+    // Australia
+    503: 'AU',
+    504: 'AU',
+    505: 'AU',
+    506: 'AU',
+    507: 'AU',
+    
+    // Turkey
+    271: 'TR',
+    
+    // Poland
+    261: 'PL',
+    262: 'PL',
+    263: 'PL',
+    
+    // Finland
+    230: 'FI',
+    231: 'FI',
+  };
+  
+  return midToCountry[mid] || 'Unknown';
+}
+
+/**
+ * Get flag image URL from country code
+ * Uses flagcdn.com for reliable flag images
+ */
+export function getFlagImageUrl(countryCode: string, size: 'w20' | 'w40' | 'w80' | 'w160' = 'w40'): string | null {
+  if (!countryCode || countryCode === 'Unknown') {
+    return null;
+  }
+  
+  // Convert to lowercase for URL
+  const code = countryCode.toLowerCase();
+  
+  // Use flagcdn.com - reliable and free flag image service
+  return `https://flagcdn.com/${size}/${code}.png`;
+}
+
+/**
+ * Get flag emoji from country code
+ * Converts ISO 3166-1 alpha-2 country code to flag emoji
+ */
+export function getFlagEmoji(countryCode: string): string {
+  if (!countryCode || countryCode === 'Unknown') {
+    return '🏳️'; // White flag emoji as fallback
+  }
+  
+  // Convert country code to flag emoji using regional indicator symbols
+  // Each letter is converted to its regional indicator symbol
+  const codePoints = countryCode
+    .toUpperCase()
+    .split('')
+    .map(char => 127397 + char.charCodeAt(0)); // Regional Indicator Symbol Letter A (🇦) starts at 127397
+  
+  return String.fromCodePoint(...codePoints);
+}
+
+/**
  * Get risk level color based on percentage
  */
 export function getRiskColor(riskPercentage: number): string {

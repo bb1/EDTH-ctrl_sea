@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb, closeDb } from '../../../data_sources/ais/db/db';
-import { getVesselClassification } from '../../../app/lib/utils';
+import { getVesselClassification, getFlagFromMMSI } from '../../../app/lib/utils';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
       id: index + 1,
       mmsi: ship.mmsi.toString(),
       name: ship.ship_name || 'Unknown',
-      flag: 'Unknown',
+      flag: getFlagFromMMSI(ship.mmsi),
       origin: 'Unknown',
       destination: 'Unknown',
       lat: parseFloat(ship.latitude) || 0,
