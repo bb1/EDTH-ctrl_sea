@@ -34,10 +34,11 @@ const WS_URL = 'wss://stream.aisstream.io/v0/stream';
 
 // Bounding box coordinates for the Baltic Sea region
 // Format: [latitude, longitude] pairs
+// Covers the entire Baltic Sea from Kiel to St. Petersburg
 const BOUNDING_BOXES = [
   [
-    [54.151051, 11.623082], // Southwest corner
-    [54.753038, 12.268528], // Northeast corner
+    [53.5, 9.5],   // Southwest corner (near Kiel, Germany)
+    [66.0, 30.0],  // Northeast corner (near St. Petersburg, Russia)
   ],
 ];
 
@@ -80,29 +81,78 @@ function connect(): void {
     socket.onmessage = async function (event: MessageEvent) {
       try {
         const aisMessage = JSON.parse(event.data as string);
-        console.log('📨 AIS Message received:');
-        console.log(JSON.stringify(aisMessage, null, 2));
 
         // Save to database
         try {
           const objectId = await insertObject(aisMessage);
           if (objectId) {
-            console.log(`💾 Saved object to database (ID: ${objectId})`);
-          } else {
-            const metaType =
-              (aisMessage.MetaData as Record<string, any>)?.MessageType ??
-              (aisMessage.MetaData as Record<string, any>)?.messageType ??
-              'unknown';
-            console.log(
-              `⚠️ Skipped AIS message type ${metaType} (${aisMessage.MessageType})`
-            );
+            // Extract fields to display
+            const metadata = aisMessage.MetaData as Record<string, any>;
+            const message = aisMessage.Message as Record<string, any>;
+            
+            // Get ship name
+            const shipName = 
+              metadata?.ShipName ?? 
+              metadata?.shipName ?? 
+              metadata?.Name ?? 
+              metadata?.VesselName ??
+              message?.ShipStaticData?.ShipName ??
+              message?.ShipStaticData?.Name ??
+              null;
+            
+            // Get MMSI
+            const mmsi = metadata?.MMSI ?? metadata?.MMSI_String ?? null;
+            
+            // Get ship type
+            const shipType = 
+              metadata?.ShipType ?? 
+              metadata?.VesselType ??
+              message?.ShipStaticData?.Type ??
+              message?.ShipStaticData?.ShipType ??
+              message?.ShipStaticData?.VesselType ??
+              null;
+            
+            // Get position
+            const positionReport = 
+              message?.PositionReport ??
+              message?.PositionReportClassA ??
+              message?.PositionReportClassAAssignedSchedule ??
+              message?.PositionReportClassAResponseToInterrogation ??
+              message?.StandardClassBCSPositionReport ??
+              message?.ExtendedClassBPositionReport ??
+              message?.LongRangeAISBroadcastMessage ??
+              null;
+            
+            const latitude = 
+              positionReport?.Latitude ?? 
+              positionReport?.Lat ??
+              metadata?.latitude ??
+              metadata?.Latitude ??
+              null;
+            
+            const longitude = 
+              positionReport?.Longitude ?? 
+              positionReport?.Lon ??
+              positionReport?.Long ??
+              metadata?.longitude ??
+              metadata?.Longitude ??
+              null;
+            
+            // Build display string
+            const parts: string[] = [];
+            if (shipName) parts.push(`Ship: ${shipName}`);
+            if (mmsi) parts.push(`MMSI: ${mmsi}`);
+            if (shipType !== null) parts.push(`Type: ${shipType}`);
+            if (latitude !== null && longitude !== null) {
+              parts.push(`Position: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+            }
+            
+            console.log(`💾 ${parts.join(' | ')}`);
           }
         } catch (dbError) {
           console.error('❌ Error saving to database:', dbError);
           // Continue processing even if DB write fails
         }
-
-        console.log('---\n');
       } catch (error) {
         console.error('❌ Error parsing AIS message:', error);
         console.log('Raw message:', event.data);
