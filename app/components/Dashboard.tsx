@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Header } from './Header';
 import MaritimeMap from './MaritimeMap';
 import { AlertsFeed } from './AlertsFeed';
@@ -46,6 +46,8 @@ export function Dashboard() {
   const [selectedShipId, setSelectedShipId] = useState<number | null>(null);
   const [trajectoryAlerts, setTrajectoryAlerts] = useState<Alert[]>([]);
   const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<number>>(new Set());
+  const [dismissedShipIds, setDismissedShipIds] = useState<Set<number>>(new Set());
+  const [temporaryShips, setTemporaryShips] = useState<Map<number, Ship>>(new Map());
 
   const handleShipClick = useCallback((ship: Ship) => {
     setSelectedShipId(ship.id);
@@ -54,12 +56,61 @@ export function Dashboard() {
   const handleAlertClick = useCallback(
     (alert: Alert) => {
       // Find the ship associated with this alert and select it
-      const ship = getShipById(alert.ship_id);
+      let ship = getShipById(alert.ship_id);
+      
+      // Fallback: if ship not found by ID, try multiple strategies
+      if (!ship) {
+        // Strategy 1: Try finding by MMSI (in synthetic mode, ship_id is often MMSI)
+        if (alert.ship_id > 0) {
+          ship = data.ships.find(s => 
+            s.mmsi === alert.ship_id.toString() || 
+            s.id === alert.ship_id ||
+            parseInt(s.mmsi) === alert.ship_id
+          );
+        }
+        
+        // Strategy 2: Try finding by vessel name
+        if (!ship && alert.vessel_name) {
+          ship = data.ships.find(s => 
+            s.name === alert.vessel_name || 
+            s.name.toLowerCase() === alert.vessel_name.toLowerCase()
+          );
+        }
+      }
+      
       if (ship) {
         setSelectedShipId(ship.id);
+      } else {
+        // Last resort: create a temporary ship from alert data if we have enough info
+        // This handles cases where alerts exist but ships haven't been loaded yet
+        if (alert.ship_id > 0 && alert.vessel_name) {
+          const tempShip: Ship = {
+            id: alert.ship_id,
+            mmsi: alert.ship_id.toString(),
+            name: alert.vessel_name,
+            flag: 'Unknown',
+            origin: 'Unknown',
+            destination: 'Unknown',
+            lat: 0, // Will be updated when real data loads
+            long: 0,
+            velocity: 0,
+            risk_percentage: alert.risk_percentage,
+            last_position_time: alert.timestamp,
+            data_source: 'AIS',
+          };
+          // Store temporary ship so it can be found by getShipById
+          setTemporaryShips(prev => {
+            const newMap = new Map(prev);
+            newMap.set(tempShip.id, tempShip);
+            return newMap;
+          });
+          setSelectedShipId(tempShip.id);
+        } else {
+          console.warn('Could not find ship for alert:', alert);
+        }
       }
     },
-    [getShipById]
+    [getShipById, data.ships]
   );
 
   const handleCloseVesselDetails = useCallback(() => {
@@ -72,9 +123,11 @@ export function Dashboard() {
     const combined = [...deduplicatedBackendAlerts, ...trajectoryAlerts];
     // Deduplicate the combined list as well
     const deduplicated = deduplicateAlerts(combined);
-    // Filter out dismissed alerts
-    return deduplicated.filter(alert => !dismissedAlertIds.has(alert.id));
-  }, [data.alerts, trajectoryAlerts, dismissedAlertIds]);
+    // Filter out dismissed alerts (by alert ID or by ship ID for synthetic mode)
+    return deduplicated.filter(alert => 
+      !dismissedAlertIds.has(alert.id) && !dismissedShipIds.has(alert.ship_id)
+    );
+  }, [data.alerts, trajectoryAlerts, dismissedAlertIds, dismissedShipIds]);
 
   const handleDismissAlerts = useCallback((shipId: number) => {
     // Compute all alerts (including dismissed ones) to find all alerts for this ship
@@ -89,6 +142,14 @@ export function Dashboard() {
       shipAlerts.forEach(alert => newSet.add(alert.id));
       return newSet;
     });
+    
+    // Mark the entire ship as dismissed (prevents new alerts from appearing in synthetic mode)
+    setDismissedShipIds(prev => {
+      const newSet = new Set(prev);
+      newSet.add(shipId);
+      return newSet;
+    });
+    
     // Also remove from trajectory alerts if they exist
     setTrajectoryAlerts(prev => prev.filter(alert => alert.ship_id !== shipId));
   }, [data.alerts, trajectoryAlerts]);
@@ -103,9 +164,15 @@ export function Dashboard() {
     const alertType = vesselAlert.type === 'red' ? 'geofence_breach' : 'trajectory_anomaly';
     const riskPercentage = vesselAlert.type === 'red' ? 90 : 50;
 
-    // Try to find ship by MMSI
+    // Try to find ship by MMSI, or use MMSI as ID if ship not found (for synthetic mode)
     const ship = data.ships.find(s => s.mmsi === vesselAlert.mmsi.toString());
-    const shipId = ship ? ship.id : 0;
+    // In synthetic mode, ship IDs are MMSI values, so use MMSI as ship_id if ship not found
+    const shipId = ship ? ship.id : vesselAlert.mmsi;
+
+    // Don't create alerts for dismissed ships
+    if (dismissedShipIds.has(shipId)) {
+      return;
+    }
 
     setTrajectoryAlerts(prev => {
       // Check if alert already exists for the same ship and same alert type
@@ -137,9 +204,26 @@ export function Dashboard() {
       };
       return [...prev, newAlert];
     });
-  }, [data.ships]);
+  }, [data.ships, dismissedShipIds]);
 
-  const selectedShip = selectedShipId ? (getShipById(selectedShipId) ?? null) : null;
+  // Clean up temporary ships that now exist in data.ships
+  useEffect(() => {
+    if (temporaryShips.size > 0 && data.ships.length > 0) {
+      setTemporaryShips(prev => {
+        const newMap = new Map(prev);
+        // Remove temporary ships that now exist in data.ships
+        data.ships.forEach(ship => {
+          newMap.delete(ship.id);
+        });
+        return newMap;
+      });
+    }
+  }, [data.ships, temporaryShips.size]);
+
+  // Get ship from data.ships or temporary ships
+  const selectedShip = selectedShipId 
+    ? (getShipById(selectedShipId) ?? temporaryShips.get(selectedShipId) ?? null)
+    : null;
 
   return (
     <div className="flex flex-col h-screen bg-slate-900">
