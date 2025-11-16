@@ -92,6 +92,64 @@ export function getInfrastructureIcon(type: 'pipeline' | 'cable' | 'platform'): 
 }
 
 /**
+ * Map AIS ship type code to human-readable vessel classification
+ * Based on IMO/ITU standard AIS vessel type codes
+ */
+export function getVesselClassification(shipType: number | null | undefined): string {
+  if (shipType === null || shipType === undefined) {
+    return 'Unknown';
+  }
+
+  // AIS vessel type codes (0-99) - Standard ITU-R M.1371-5
+  const typeMap: Record<number, string> = {
+    0: 'Not specified',
+    1: 'Reserved',
+    2: 'Wing in ground',
+    3: 'Special craft',
+    4: 'High speed craft',
+    5: 'Special craft',
+    6: 'Passenger',
+    7: 'Cargo',
+    8: 'Tanker',
+    9: 'Other',
+  };
+
+  // Range-based classifications
+  if (shipType >= 20 && shipType <= 29) {
+    return 'Wing in ground';
+  }
+  if (shipType >= 30 && shipType <= 39) {
+    return 'Fishing';
+  }
+  if (shipType >= 40 && shipType <= 49) {
+    return 'Towing';
+  }
+  if (shipType >= 50 && shipType <= 59) {
+    return 'Dredging or underwater operations';
+  }
+  if (shipType >= 60 && shipType <= 69) {
+    return 'Diving operations';
+  }
+  if (shipType >= 70 && shipType <= 79) {
+    return 'Military operations';
+  }
+  if (shipType >= 80 && shipType <= 89) {
+    return 'Sailing';
+  }
+  if (shipType >= 90 && shipType <= 99) {
+    return 'Pleasure craft';
+  }
+  
+  // Specific mappings for 0-9
+  if (typeMap[shipType]) {
+    return typeMap[shipType];
+  }
+  
+  // Default fallback
+  return `Type ${shipType}`;
+}
+
+/**
  * Export alerts to CSV format
  */
 export function exportAlertsToCSV(alerts: Alert[]): string {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb, closeDb } from '../../../data_sources/ais/db/db';
+import { getVesselClassification } from '../../../app/lib/utils';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -23,7 +24,8 @@ export async function GET(request: Request) {
         ST_X(pr.location) as longitude,
         pr.sog as velocity,
         pr.time_utc as last_position_time,
-        pr.cog as course
+        pr.cog as course,
+        sm.ship_type
       FROM position_reports pr
       JOIN object o ON pr.object_id = o.id
       LEFT JOIN ship_metadata sm ON pr.mmsi = sm.mmsi
@@ -53,6 +55,7 @@ export async function GET(request: Request) {
       last_position_time:
         ship.last_position_time?.toISOString() || new Date().toISOString(),
       data_source: 'AIS' as const,
+      classification: getVesselClassification(ship.ship_type),
     }));
 
     return NextResponse.json(transformedShips);

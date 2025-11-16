@@ -1,6 +1,6 @@
 'use client';
 
-import { X, MapPin, Navigation2, Clock, Flag, Ship as ShipIcon, AlertCircle } from 'lucide-react';
+import { X, MapPin, Navigation2, Clock, Flag, Ship as ShipIcon, AlertCircle, Tag } from 'lucide-react';
 import type { Ship, Alert } from '../lib/types';
 import { getRiskColor, formatTimestamp, formatVelocity, getRiskLevel } from '../lib/utils';
 
@@ -79,6 +79,11 @@ export function VesselDetails({ ship, alerts, onClose, onDismissAlerts }: Vessel
               <Flag size={16} className="text-slate-500" />
               <span className="text-slate-400">Flag:</span>
               <span className="text-slate-100 font-medium">{ship.flag || 'Unknown'}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <Tag size={16} className="text-slate-500" />
+              <span className="text-slate-400">Classification:</span>
+              <span className="text-slate-100 font-medium">{ship.classification || 'Unknown'}</span>
             </div>
             <div className="text-sm">
               <span className="text-slate-400">Origin:</span>

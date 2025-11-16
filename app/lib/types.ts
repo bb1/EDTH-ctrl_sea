@@ -13,6 +13,7 @@ export interface Ship {
   risk_percentage: number;
   last_position_time: string;
   data_source: 'AIS' | 'RADAR' | 'SATELLITE';
+  classification?: string;
 }
 
 export interface Infrastructure {
