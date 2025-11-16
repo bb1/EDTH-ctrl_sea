@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { getVesselColor } from '../lib/utils'
+import { useDataSource } from '../contexts/DataSourceContext'
 
 interface Infrastructure {
   id: number
@@ -68,6 +69,7 @@ interface MaritimeMapProps {
 }
 
 export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVesselColorChange }: MaritimeMapProps) {
+  const { dataSource } = useDataSource()
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
   const shipMarkersRef = useRef<Map<number, maplibregl.Marker>>(new Map())
@@ -85,6 +87,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
   const trajectoryInitializedRef = useRef<boolean>(false)
   const trajectoryRef = useRef<TrajectoryPoint[]>([])
   const [trajectory, setTrajectory] = useState<TrajectoryPoint[]>([])
+  const dataSourceRef = useRef<'real' | 'synthetic'>(dataSource)
   const cablesMapRef = useRef<Map<string, { coordinates: number[][] }[]>>(new Map())
 
   // Initialize map only once
@@ -355,7 +358,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
   useEffect(() => {
     const fetchTrajectory = async () => {
       try {
-        const response = await fetch('/api/trajectory')
+        const response = await fetch(`/api/trajectory?dataSource=${dataSource}`)
         if (response.ok) {
           const data = await response.json()
           setTrajectory(data)
@@ -372,7 +375,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
     const interval = setInterval(fetchTrajectory, 5000)
     
     return () => clearInterval(interval)
-  }, [])
+  }, [dataSource])
 
   // Calculate bearing (angle) between two points in degrees
   // Returns angle in degrees where 0° = North, 90° = East, 180° = South, 270° = West
@@ -437,7 +440,23 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
   }
 
   // Initialize animation only once when both map and trajectory are ready
+  // For synthetic data, restart animation when data source changes
   useEffect(() => {
+    // Only run animation for synthetic data
+    if (dataSource !== 'synthetic') {
+      // Clean up if switching away from synthetic
+      if (trajectoryMarkerRef.current) {
+        trajectoryMarkerRef.current.remove()
+        trajectoryMarkerRef.current = null
+      }
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current)
+        animationIntervalRef.current = null
+      }
+      trajectoryInitializedRef.current = false
+      return
+    }
+
     // Wait for map to be initialized
     if (!map.current || !mapInitialized) {
       return
@@ -447,10 +466,21 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
     if (!trajectoryReady || trajectory.length === 0) {
       return
     }
-
-    // Only initialize once
+    
+    // For synthetic data, reset if already initialized to allow replay
     if (trajectoryInitializedRef.current) {
-      return
+      // Clean up existing animation
+      if (trajectoryMarkerRef.current) {
+        trajectoryMarkerRef.current.remove()
+        trajectoryMarkerRef.current = null
+      }
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current)
+        animationIntervalRef.current = null
+      }
+      trajectoryInitializedRef.current = false
+      currentTrajectoryIndexRef.current = 0
+      previousColorRef.current = null
     }
 
     // Update trajectory ref
@@ -488,7 +518,41 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       
       // Check if we're at or past the last point
       if (currentIndex >= currentTrajectory.length) {
-        // Remove the ship marker and stop animation
+        // For synthetic data, loop the animation
+        if (dataSourceRef.current === 'synthetic' && currentTrajectory.length > 0) {
+          // Reset to start for replay
+          currentTrajectoryIndexRef.current = 0
+          previousColorRef.current = null
+          // Move marker back to first point
+          const firstPoint = currentTrajectory[0]
+          if (trajectoryMarkerRef.current) {
+            trajectoryMarkerRef.current.setLngLat([firstPoint.lon, firstPoint.lat])
+            // Reset icon color to initial state
+            const initialColor = cablesMapRef.current.size > 0 
+              ? getVesselColor({ lat: firstPoint.lat, lon: firstPoint.lon }, cablesMapRef.current)
+              : 'green'
+            previousColorRef.current = initialColor
+            const currentElement = trajectoryMarkerRef.current.getElement()
+            const currentSvg = currentElement.querySelector('svg')
+            if (currentSvg) {
+              const colorMap = {
+                green: '#22c55e',
+                yellow: '#eab308',
+                red: '#ef4444'
+              }
+              const coloredElements = currentSvg.querySelectorAll('path[fill], rect[fill]')
+              coloredElements.forEach((element) => {
+                const fill = element.getAttribute('fill')
+                if (fill && fill !== 'white' && fill !== 'none' && fill !== 'transparent') {
+                  element.setAttribute('fill', colorMap[initialColor])
+                }
+              })
+            }
+          }
+          return // Continue animation from the beginning
+        }
+        
+        // For real data, stop animation when finished
         if (trajectoryMarkerRef.current) {
           trajectoryMarkerRef.current.remove()
           trajectoryMarkerRef.current = null
@@ -497,18 +561,28 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
           clearInterval(animationIntervalRef.current)
           animationIntervalRef.current = null
         }
+        // Reset initialization so it can restart if new trajectory comes in
+        trajectoryInitializedRef.current = false
+        currentTrajectoryIndexRef.current = 0
         return
       }
 
       const point = currentTrajectory[currentIndex]
       const isLastPoint = currentIndex === currentTrajectory.length - 1
       
-      // If this is the last point, update position one final time and then remove immediately
+      // If this is the last point, handle based on data source
       if (isLastPoint) {
         // Update to final position
         trajectoryMarkerRef.current.setLngLat([point.lon, point.lat])
         
-        // Stop animation
+        // For synthetic data, loop back to start
+        if (dataSourceRef.current === 'synthetic') {
+          // Move to next iteration (will trigger loop logic above)
+          currentTrajectoryIndexRef.current = currentIndex + 1
+          return
+        }
+        
+        // For real data, stop animation
         if (animationIntervalRef.current) {
           clearInterval(animationIntervalRef.current)
           animationIntervalRef.current = null
@@ -602,10 +676,13 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
     }
 
     return () => {
-      // Don't clean up here - let it run until component unmounts
-      // Only clean up on unmount
+      // Clean up animation when effect re-runs
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current)
+        animationIntervalRef.current = null
+      }
     }
-  }, [mapInitialized, trajectoryReady]) // Depend on both map and trajectory readiness
+  }, [mapInitialized, trajectoryReady, dataSource, trajectory.length]) // Depend on map, trajectory, and data source
 
   // Separate effect to update trajectory ref when trajectory changes (doesn't restart animation)
   useEffect(() => {
@@ -618,6 +695,42 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       setTrajectoryReady(false)
     }
   }, [trajectory])
+
+  // Update dataSource ref when it changes
+  useEffect(() => {
+    dataSourceRef.current = dataSource
+  }, [dataSource])
+
+  // Effect to handle data source changes - restart animation for synthetic data
+  useEffect(() => {
+    if (dataSource === 'synthetic') {
+      // When switching to synthetic, reset animation state to allow replay
+      if (trajectoryMarkerRef.current) {
+        trajectoryMarkerRef.current.remove()
+        trajectoryMarkerRef.current = null
+      }
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current)
+        animationIntervalRef.current = null
+      }
+      // Reset animation state so it can restart
+      trajectoryInitializedRef.current = false
+      currentTrajectoryIndexRef.current = 0
+      previousColorRef.current = null
+    } else {
+      // When switching away from synthetic, stop animation
+      if (trajectoryMarkerRef.current) {
+        trajectoryMarkerRef.current.remove()
+        trajectoryMarkerRef.current = null
+      }
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current)
+        animationIntervalRef.current = null
+      }
+      trajectoryInitializedRef.current = false
+      currentTrajectoryIndexRef.current = 0
+    }
+  }, [dataSource])
 
   return <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
 }

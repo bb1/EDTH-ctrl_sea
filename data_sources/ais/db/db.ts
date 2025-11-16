@@ -16,12 +16,23 @@ declare const Bun: {
 
 import postgres from 'postgres';
 
+// Helper function to get environment variables (works in both Bun and Node.js)
+function getEnv(key: string, defaultValue: string): string {
+  if (typeof Bun !== 'undefined' && Bun.env) {
+    return Bun.env[key] || defaultValue;
+  }
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env[key] || defaultValue;
+  }
+  return defaultValue;
+}
+
 // Database connection configuration
-const DB_HOST = Bun.env.POSTGRES_HOST || 'localhost';
-const DB_PORT = parseInt(Bun.env.POSTGRES_PORT || '5432', 10);
-const DB_USER = Bun.env.POSTGRES_USER || 'postgres';
-const DB_PASSWORD = Bun.env.POSTGRES_PASSWORD || '';
-const DB_NAME = Bun.env.POSTGRES_DB || 'postgres';
+const DB_HOST = getEnv('POSTGRES_HOST', 'localhost');
+const DB_PORT = parseInt(getEnv('POSTGRES_PORT', '5432'), 10);
+const DB_USER = getEnv('POSTGRES_USER', 'postgres');
+const DB_PASSWORD = getEnv('POSTGRES_PASSWORD', '');
+const DB_NAME = getEnv('POSTGRES_DB', 'postgres');
 
 // Connection string
 const connectionString = `postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}`;

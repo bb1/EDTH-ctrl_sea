@@ -11,9 +11,9 @@ const API_BASE = typeof window !== 'undefined'
 /**
  * Fetch all ships from backend API
  */
-export async function fetchShips(): Promise<Ship[]> {
+export async function fetchShips(dataSource: 'real' | 'synthetic' = 'real'): Promise<Ship[]> {
   try {
-    const response = await fetch('/api/ships', {
+    const response = await fetch(`/api/ships?dataSource=${dataSource}`, {
       cache: 'no-store',
     });
 
@@ -80,14 +80,14 @@ export async function fetchAlerts(): Promise<Alert[]> {
 /**
  * Fetch all maritime data (ships, infrastructure, alerts)
  */
-export async function fetchMaritimeData(): Promise<{
+export async function fetchMaritimeData(dataSource: 'real' | 'synthetic' = 'real'): Promise<{
   ships: Ship[];
   infrastructure: Infrastructure[] | any;
   alerts: Alert[];
 }> {
   try {
     const [ships, infrastructure, alerts] = await Promise.all([
-      fetchShips(),
+      fetchShips(dataSource),
       fetchInfrastructure(),
       fetchAlerts(),
     ]);

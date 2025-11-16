@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { DataSourceProvider } from './contexts/DataSourceContext';
 
 export const metadata: Metadata = {
   title: 'Maritime Monitor - EDTH-CTRL-SEA',
@@ -13,7 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <DataSourceProvider>{children}</DataSourceProvider>
+      </body>
     </html>
   );
 }

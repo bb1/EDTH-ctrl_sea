@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { fetchMaritimeData, checkBackendConnection } from '../lib/api';
+import { useDataSource } from '../contexts/DataSourceContext';
 import type { MaritimeData, Ship } from '../lib/types';
 
 const REFRESH_INTERVAL = 5000; // 5 seconds
 
 export function useMaritimeData() {
+  const { dataSource } = useDataSource();
   const [data, setData] = useState<MaritimeData>({
     ships: [],
     infrastructure: [],
@@ -32,8 +34,8 @@ export function useMaritimeData() {
         return;
       }
 
-      // Fetch data
-      const newData = await fetchMaritimeData();
+      // Fetch data with current data source
+      const newData = await fetchMaritimeData(dataSource);
       setData(newData);
       setLastUpdate(new Date());
       setError(null);
@@ -44,7 +46,7 @@ export function useMaritimeData() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dataSource]);
 
   useEffect(() => {
     // Initial fetch

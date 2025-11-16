@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getDb, closeDb } from '../../../data_sources/ais/db/db'
 
 interface TrajectoryPoint {
   lat: number
@@ -51,37 +52,72 @@ function pointToSegmentDistance(
   return Math.sqrt(dx * dx + dy * dy)
 }
 
-export async function GET() {
-  try {
-    let fileContent: string
-    
-    // Try Bun first (if available)
-    if (typeof Bun !== 'undefined') {
-      const file = Bun.file('data_sources/ais/db_synthetic/synthetic_data.json')
-      fileContent = await file.text()
-    } else {
-      // Fallback to Node.js fs
-      const { readFile } = await import('fs/promises')
-      const { join } = await import('path')
-      const filePath = join(process.cwd(), 'data_sources', 'ais', 'db_synthetic', 'synthetic_data.json')
-      fileContent = await readFile(filePath, 'utf-8')
-    }
-    
-    const data = JSON.parse(fileContent)
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const dataSource = searchParams.get('dataSource') || 'real'
 
-    // Extract trajectory points
-    const trajectory: TrajectoryPoint[] = data
-      .filter((item: any) => item.MetaData?.latitude && item.MetaData?.longitude)
-      .map((item: any) => ({
-        lat: item.MetaData.latitude,
-        lon: item.MetaData.longitude,
-        timestamp: item.MetaData.time_utc || '',
-        mmsi: item.MetaData.MMSI || 0,
-        shipName: item.MetaData.ShipName?.trim() || 'Unknown'
-      }))
-      .sort((a: TrajectoryPoint, b: TrajectoryPoint) => 
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      )
+  try {
+    if (dataSource === 'synthetic') {
+      // Use synthetic data from file
+      let fileContent: string
+      
+      // Try Bun first (if available)
+      if (typeof Bun !== 'undefined') {
+        const file = Bun.file('data_sources/ais/db_synthetic/synthetic_data.json')
+        fileContent = await file.text()
+      } else {
+        // Fallback to Node.js fs
+        const { readFile } = await import('fs/promises')
+        const { join } = await import('path')
+        const filePath = join(process.cwd(), 'data_sources', 'ais', 'db_synthetic', 'synthetic_data.json')
+        fileContent = await readFile(filePath, 'utf-8')
+      }
+      
+      const data = JSON.parse(fileContent)
+
+      // Extract trajectory points
+      const trajectory: TrajectoryPoint[] = data
+        .filter((item: any) => item.MetaData?.latitude && item.MetaData?.longitude)
+        .map((item: any) => ({
+          lat: item.MetaData.latitude,
+          lon: item.MetaData.longitude,
+          timestamp: item.MetaData.time_utc || '',
+          mmsi: item.MetaData.MMSI || 0,
+          shipName: item.MetaData.ShipName?.trim() || 'Unknown'
+        }))
+        .sort((a: TrajectoryPoint, b: TrajectoryPoint) => 
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        )
+
+      return NextResponse.json(trajectory)
+    }
+
+    // Query real data from postgres
+    const db = getDb()
+    
+    // Get recent position reports with ship names
+    const positionReports = await db`
+      SELECT 
+        pr.mmsi,
+        ST_Y(pr.location) as latitude,
+        ST_X(pr.location) as longitude,
+        pr.time_utc,
+        COALESCE(sm.ship_name, o.object_name, 'Unknown') as ship_name
+      FROM position_reports pr
+      JOIN object o ON pr.object_id = o.id
+      LEFT JOIN ship_metadata sm ON pr.mmsi = sm.mmsi
+      WHERE pr.time_utc >= NOW() - INTERVAL '24 hours'
+      ORDER BY pr.time_utc ASC
+    `
+
+    // Transform to TrajectoryPoint format
+    const trajectory: TrajectoryPoint[] = positionReports.map((report: any) => ({
+      lat: parseFloat(report.latitude) || 0,
+      lon: parseFloat(report.longitude) || 0,
+      timestamp: report.time_utc?.toISOString() || new Date().toISOString(),
+      mmsi: report.mmsi || 0,
+      shipName: report.ship_name || 'Unknown'
+    }))
 
     return NextResponse.json(trajectory)
   } catch (error) {
@@ -90,6 +126,12 @@ export async function GET() {
       { error: 'Failed to load trajectory data' },
       { status: 500 }
     )
+  } finally {
+    try {
+      await closeDb()
+    } catch (closeError) {
+      console.error('Error closing database:', closeError)
+    }
   }
 }
 

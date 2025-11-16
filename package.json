@@ -2,9 +2,9 @@
   "name": "edth-ctrl-sea",
   "version": "1.0.0",
   "scripts": {
-    "dev": "fnm exec --using=20 -- next dev || next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "bun --bun next dev",
+    "build": "bun --bun next build",
+    "start": "bun --bun next start",
     "stream:ais": "bun data_sources/ais/stream.ts",
     "init:db": "bun data_sources/ais/db/db.ts",
     "import:cables": "bun data_sources/infrastructure/db/import.ts",

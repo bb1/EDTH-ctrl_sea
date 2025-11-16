@@ -1,6 +1,7 @@
 'use client';
 
 import { Ship, Radio, Satellite, Plane } from 'lucide-react';
+import { useDataSource } from '../contexts/DataSourceContext';
 
 interface HeaderProps {
   connected: boolean;
@@ -19,6 +20,8 @@ export function Header({
   alertsCount,
   shipsCount,
 }: HeaderProps) {
+  const { dataSource, setDataSource } = useDataSource();
+
   const formatLastUpdate = () => {
     if (!lastUpdate) return 'Never';
     const diffMs = Date.now() - lastUpdate.getTime();
@@ -26,6 +29,10 @@ export function Header({
     if (diffSecs < 60) return `${diffSecs}s ago`;
     const diffMins = Math.floor(diffSecs / 60);
     return `${diffMins}m ago`;
+  };
+
+  const toggleDataSource = () => {
+    setDataSource(dataSource === 'real' ? 'synthetic' : 'real');
   };
 
   interface DataSourceButtonProps {
@@ -76,6 +83,21 @@ export function Header({
           <span className="font-semibold text-slate-200">{shipsCount}</span> vessels
           {' | '}
           <span className="font-semibold text-slate-200">{alertsCount}</span> alerts
+        </div>
+
+        {/* Data Source Toggle */}
+        <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-700/50 border border-slate-600/50">
+          <span className="text-xs font-medium text-slate-400">Real Data</span>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={dataSource === 'synthetic'}
+              onChange={toggleDataSource}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
+          </label>
+          <span className="text-xs font-medium text-slate-400">Synthetic</span>
         </div>
 
         <div className="flex items-center gap-2">
