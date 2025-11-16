@@ -81,7 +81,6 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
   const animationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const currentTrajectoryIndexRef = useRef<number>(0)
   const previousColorRef = useRef<'green' | 'yellow' | 'red' | null>(null)
-  const lastPointDebugMarkerRef = useRef<maplibregl.Marker | null>(null)
   const previousTrajectoryLengthRef = useRef<number>(0)
   const trajectoryInitializedRef = useRef<boolean>(false)
   const trajectoryRef = useRef<TrajectoryPoint[]>([])
@@ -144,10 +143,6 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       if (trajectoryMarkerRef.current) {
         trajectoryMarkerRef.current.remove()
         trajectoryMarkerRef.current = null
-      }
-      if (lastPointDebugMarkerRef.current) {
-        lastPointDebugMarkerRef.current.remove()
-        lastPointDebugMarkerRef.current = null
       }
       if (animationIntervalRef.current) {
         clearInterval(animationIntervalRef.current)
@@ -441,42 +436,6 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
     return el
   }
 
-  // Create debug marker at last trajectory point
-  useEffect(() => {
-    if (!map.current || !isInitializedRef.current || trajectory.length === 0) {
-      // Clean up debug marker if no trajectory
-      if (lastPointDebugMarkerRef.current) {
-        lastPointDebugMarkerRef.current.remove()
-        lastPointDebugMarkerRef.current = null
-      }
-      return
-    }
-
-    // Remove existing debug marker
-    if (lastPointDebugMarkerRef.current) {
-      lastPointDebugMarkerRef.current.remove()
-      lastPointDebugMarkerRef.current = null
-    }
-
-    // Create debug marker at last point
-    const lastPoint = trajectory[trajectory.length - 1]
-    const debugEl = document.createElement('div')
-    debugEl.style.width = '16px'
-    debugEl.style.height = '16px'
-    debugEl.style.backgroundColor = '#ff0000'
-    debugEl.style.border = '2px solid #ffffff'
-    debugEl.style.borderRadius = '50%'
-    debugEl.style.boxShadow = '0 0 8px rgba(255, 0, 0, 0.8)'
-    debugEl.style.cursor = 'pointer'
-    debugEl.title = `Last point: ${lastPoint.lat.toFixed(6)}, ${lastPoint.lon.toFixed(6)}`
-
-    const debugMarker = new maplibregl.Marker({ element: debugEl })
-      .setLngLat([lastPoint.lon, lastPoint.lat])
-      .addTo(map.current!)
-    
-    lastPointDebugMarkerRef.current = debugMarker
-  }, [trajectory])
-
   // Initialize animation only once when both map and trajectory are ready
   useEffect(() => {
     // Wait for map to be initialized
@@ -529,12 +488,11 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       
       // Check if we're at or past the last point
       if (currentIndex >= currentTrajectory.length) {
-        // Ensure we're at the final position before stopping
-        const lastPoint = currentTrajectory[currentTrajectory.length - 1]
-        if (trajectoryMarkerRef.current && lastPoint) {
-          trajectoryMarkerRef.current.setLngLat([lastPoint.lon, lastPoint.lat])
+        // Remove the ship marker and stop animation
+        if (trajectoryMarkerRef.current) {
+          trajectoryMarkerRef.current.remove()
+          trajectoryMarkerRef.current = null
         }
-        // Stop animation
         if (animationIntervalRef.current) {
           clearInterval(animationIntervalRef.current)
           animationIntervalRef.current = null
@@ -544,6 +502,29 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
 
       const point = currentTrajectory[currentIndex]
       const isLastPoint = currentIndex === currentTrajectory.length - 1
+      
+      // If this is the last point, update position one final time and then remove immediately
+      if (isLastPoint) {
+        // Update to final position
+        trajectoryMarkerRef.current.setLngLat([point.lon, point.lat])
+        
+        // Stop animation
+        if (animationIntervalRef.current) {
+          clearInterval(animationIntervalRef.current)
+          animationIntervalRef.current = null
+        }
+        
+        // Remove the ship marker immediately
+        if (trajectoryMarkerRef.current) {
+          trajectoryMarkerRef.current.remove()
+          trajectoryMarkerRef.current = null
+        }
+        
+        // Reset initialization so it can restart if new trajectory comes in
+        trajectoryInitializedRef.current = false
+        currentTrajectoryIndexRef.current = 0
+        return
+      }
       
       // Fixed rotation to face WEST (180 degrees)
       const rotation = 180
@@ -580,7 +561,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
         }
       }
       
-      // Update marker position - this ensures we reach the last position
+      // Update marker position
       trajectoryMarkerRef.current.setLngLat([point.lon, point.lat])
       
       // Update icon color and rotation
@@ -609,19 +590,9 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       // Update previous color and point
       previousColorRef.current = color
       previousPoint = point
-
-      // Move to next point (stop at end, don't loop)
-      if (isLastPoint) {
-        // We've processed the last point, stop animation
-        if (animationIntervalRef.current) {
-          clearInterval(animationIntervalRef.current)
-          animationIntervalRef.current = null
-        }
-        return
-      } else {
-        // Move to next point
-        currentTrajectoryIndexRef.current = currentIndex + 1
-      }
+      
+      // Move to next point
+      currentTrajectoryIndexRef.current = currentIndex + 1
     }
 
     // Start animation loop (100ms delay between points - adjust for speed)
