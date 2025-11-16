@@ -148,8 +148,15 @@ export function AlertsFeed({ alerts, ships, onAlertClick }: AlertsFeedProps) {
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex-1">
-                      <div className="font-semibold text-slate-100 text-sm mb-1">
-                        {alert.vessel_name || `MMSI: ${ship?.mmsi || 'Unknown'}`}
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="font-semibold text-slate-100 text-sm">
+                          {alert.vessel_name || `MMSI: ${ship?.mmsi || 'Unknown'}`}
+                        </div>
+                        {alert.count && alert.count > 1 && (
+                          <span className="px-1.5 py-0.5 bg-blue-600 text-white text-xs font-bold rounded-full min-w-[20px] text-center">
+                            {alert.count}
+                          </span>
+                        )}
                       </div>
                       <div
                         className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${getAlertTypeColor(

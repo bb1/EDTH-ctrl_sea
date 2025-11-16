@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Header } from './Header';
 import MaritimeMap from './MaritimeMap';
 import { AlertsFeed } from './AlertsFeed';
@@ -8,6 +8,37 @@ import { VesselDetails } from './VesselDetails';
 import { useMaritimeData } from '../hooks/useMaritimeData';
 import { exportAlertsToCSV, downloadCSV } from '../lib/utils';
 import type { Ship, Alert } from '../lib/types';
+
+// Helper function to deduplicate alerts by ship_id and alert_type
+function deduplicateAlerts(alerts: Alert[]): Alert[] {
+  const alertMap = new Map<string, Alert>();
+  
+  alerts.forEach(alert => {
+    // Create a key from ship_id and alert_type
+    const key = `${alert.ship_id}-${alert.alert_type}`;
+    const existing = alertMap.get(key);
+    
+    if (existing) {
+      // Increment count if alert already exists
+      // Add the counts together (incoming alert count + existing count)
+      const incomingCount = alert.count || 1;
+      const existingCount = existing.count || 1;
+      alertMap.set(key, {
+        ...existing,
+        count: existingCount + incomingCount,
+        timestamp: alert.timestamp > existing.timestamp ? alert.timestamp : existing.timestamp // Keep latest timestamp
+      });
+    } else {
+      // Add new alert with count = 1 (or preserve existing count if present)
+      alertMap.set(key, {
+        ...alert,
+        count: alert.count || 1
+      });
+    }
+  });
+  
+  return Array.from(alertMap.values());
+}
 
 export function Dashboard() {
   const { data, loading, error, connected, lastUpdate, refreshData, getShipById } =
@@ -34,45 +65,61 @@ export function Dashboard() {
     setSelectedShipId(null);
   }, []);
 
+  // Deduplicate backend alerts and combine with trajectory alerts
+  const allAlerts = useMemo(() => {
+    const deduplicatedBackendAlerts = deduplicateAlerts(data.alerts);
+    const combined = [...deduplicatedBackendAlerts, ...trajectoryAlerts];
+    // Deduplicate the combined list as well
+    return deduplicateAlerts(combined);
+  }, [data.alerts, trajectoryAlerts]);
+
   const handleExport = useCallback(() => {
-    const allAlerts = [...data.alerts, ...trajectoryAlerts];
     const csvContent = exportAlertsToCSV(allAlerts);
     downloadCSV(csvContent, `maritime-alerts-${new Date().toISOString().split('T')[0]}.csv`);
-  }, [data.alerts, trajectoryAlerts]);
+  }, [allAlerts]);
 
   const handleVesselColorChange = useCallback((vesselAlert: { id: string; type: 'yellow' | 'red'; message: string; timestamp: string; vesselName: string; mmsi: number; count: number }) => {
     // Convert VesselAlert to Alert format
-    const alert: Alert = {
-      id: trajectoryAlerts.length + 1,
-      ship_id: 0, // Will be set if we can find the ship by MMSI
-      vessel_name: vesselAlert.vesselName,
-      alert_type: vesselAlert.type === 'red' ? 'geofence_breach' : 'trajectory_anomaly',
-      description: vesselAlert.message,
-      risk_percentage: vesselAlert.type === 'red' ? 90 : 60,
-      timestamp: vesselAlert.timestamp
-    };
+    const alertType = vesselAlert.type === 'red' ? 'geofence_breach' : 'trajectory_anomaly';
+    const riskPercentage = vesselAlert.type === 'red' ? 90 : 60;
 
     // Try to find ship by MMSI
     const ship = data.ships.find(s => s.mmsi === vesselAlert.mmsi.toString());
-    if (ship) {
-      alert.ship_id = ship.id;
-    }
+    const shipId = ship ? ship.id : 0;
 
     setTrajectoryAlerts(prev => {
-      // Check if alert already exists (by id)
-      const existingIndex = prev.findIndex(a => a.id.toString() === vesselAlert.id);
+      // Check if alert already exists for the same ship and same alert type
+      const existingIndex = prev.findIndex(
+        a => a.ship_id === shipId && a.alert_type === alertType
+      );
+      
       if (existingIndex >= 0) {
-        // Update existing alert
+        // Increment count for existing alert
         const updated = [...prev];
-        updated[existingIndex] = { ...alert, id: prev[existingIndex].id };
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          count: (updated[existingIndex].count || 1) + 1,
+          timestamp: vesselAlert.timestamp // Update to latest timestamp
+        };
         return updated;
       }
-      // Add new alert
-      return [...prev, alert];
+      
+      // Add new alert with count = 1
+      const newAlert: Alert = {
+        id: Date.now(), // Use timestamp as ID for uniqueness
+        ship_id: shipId,
+        vessel_name: vesselAlert.vesselName,
+        alert_type: alertType,
+        description: vesselAlert.message,
+        risk_percentage: riskPercentage,
+        timestamp: vesselAlert.timestamp,
+        count: 1
+      };
+      return [...prev, newAlert];
     });
-  }, [data.ships, trajectoryAlerts.length]);
+  }, [data.ships]);
 
-  const selectedShip = selectedShipId ? getShipById(selectedShipId) : null;
+  const selectedShip = selectedShipId ? (getShipById(selectedShipId) ?? null) : null;
 
   return (
     <div className="flex flex-col h-screen bg-slate-900">
@@ -81,7 +128,7 @@ export function Dashboard() {
         lastUpdate={lastUpdate}
         onRefresh={refreshData}
         onExport={handleExport}
-        alertsCount={data.alerts.length + trajectoryAlerts.length}
+        alertsCount={allAlerts.length}
         shipsCount={data.ships.length}
       />
 
@@ -89,7 +136,7 @@ export function Dashboard() {
         {/* Left Sidebar - Alerts Feed (25%) */}
         <div className="w-96 flex-shrink-0">
           <AlertsFeed
-            alerts={[...data.alerts, ...trajectoryAlerts]}
+            alerts={allAlerts}
             ships={data.ships}
             onAlertClick={handleAlertClick}
           />
@@ -127,7 +174,7 @@ export function Dashboard() {
         <div className="w-96 flex-shrink-0">
           <VesselDetails
             ship={selectedShip}
-            alerts={[...data.alerts, ...trajectoryAlerts]}
+            alerts={allAlerts}
             onClose={handleCloseVesselDetails}
           />
         </div>

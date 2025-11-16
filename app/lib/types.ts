@@ -32,6 +32,7 @@ export interface Alert {
   description: string;
   risk_percentage: number;
   timestamp: string;
+  count?: number; // Number of times this alert has occurred for the same ship and level
 }
 
 export interface AlertFilter {

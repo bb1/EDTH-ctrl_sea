@@ -142,9 +142,16 @@ export function VesselDetails({ ship, alerts, onClose }: VesselDetailsProps) {
                     className="p-3 bg-slate-700/50 rounded border border-slate-600/50"
                   >
                     <div className="flex items-start justify-between mb-1">
-                      <div className="text-xs font-medium text-slate-300">
-                        {alert.alert_type.replace(/_/g, ' ').replace(/\b\w/g, (l) =>
-                          l.toUpperCase()
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs font-medium text-slate-300">
+                          {alert.alert_type.replace(/_/g, ' ').replace(/\b\w/g, (l) =>
+                            l.toUpperCase()
+                          )}
+                        </div>
+                        {alert.count && alert.count > 1 && (
+                          <span className="px-1.5 py-0.5 bg-blue-600 text-white text-xs font-bold rounded-full min-w-[20px] text-center">
+                            {alert.count}
+                          </span>
                         )}
                       </div>
                       <div
