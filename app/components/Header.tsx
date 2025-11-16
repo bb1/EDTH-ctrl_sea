@@ -1,7 +1,6 @@
 'use client';
 
-import { RefreshCw, Download, Settings, BarChart3 } from 'lucide-react';
-import { useState } from 'react';
+import { Ship, Radio, Satellite, Plane } from 'lucide-react';
 
 interface HeaderProps {
   connected: boolean;
@@ -20,14 +19,6 @@ export function Header({
   alertsCount,
   shipsCount,
 }: HeaderProps) {
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    await onRefresh();
-    setTimeout(() => setIsRefreshing(false), 1000);
-  };
-
   const formatLastUpdate = () => {
     if (!lastUpdate) return 'Never';
     const diffMs = Date.now() - lastUpdate.getTime();
@@ -36,6 +27,28 @@ export function Header({
     const diffMins = Math.floor(diffSecs / 60);
     return `${diffMins}m ago`;
   };
+
+  interface DataSourceButtonProps {
+    name: string;
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+    active: boolean;
+  }
+
+  function DataSourceButton({ name, icon: Icon, active }: DataSourceButtonProps) {
+    return (
+      <button
+        className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+          active
+            ? 'bg-green-600/20 border border-green-500/50 text-green-400'
+            : 'bg-slate-700/50 border border-slate-600/50 text-slate-400'
+        }`}
+        title={active ? `${name} - Active` : `${name} - Inactive`}
+      >
+        <Icon size={20} />
+        <span className="text-xs font-medium">{name}</span>
+      </button>
+    );
+  }
 
   return (
     <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
@@ -65,35 +78,28 @@ export function Header({
           <span className="font-semibold text-slate-200">{alertsCount}</span> alerts
         </div>
 
-        <button
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <RefreshCw
-            size={18}
-            className={isRefreshing ? 'animate-spin' : ''}
+        <div className="flex items-center gap-2">
+          <DataSourceButton
+            name="AIS"
+            icon={Ship}
+            active={true}
           />
-          Refresh
-        </button>
-
-        <button
-          onClick={onExport}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg transition-colors"
-        >
-          <Download size={18} />
-          Export
-        </button>
-
-        <button className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg transition-colors">
-          <BarChart3 size={18} />
-          Statistics
-        </button>
-
-        <button className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg transition-colors">
-          <Settings size={18} />
-          Settings
-        </button>
+          <DataSourceButton
+            name="Radar"
+            icon={Radio}
+            active={true}
+          />
+          <DataSourceButton
+            name="Satellite"
+            icon={Satellite}
+            active={false}
+          />
+          <DataSourceButton
+            name="Drone"
+            icon={Plane}
+            active={false}
+          />
+        </div>
       </div>
     </header>
   );
