@@ -75,10 +75,15 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
   const cableSourceRef = useRef<string | null>(null)
   const cablePopupRef = useRef<maplibregl.Popup | null>(null)
   const isInitializedRef = useRef(false)
+  const [mapInitialized, setMapInitialized] = useState(false)
+  const [trajectoryReady, setTrajectoryReady] = useState(false)
   const trajectoryMarkerRef = useRef<maplibregl.Marker | null>(null)
   const animationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const currentTrajectoryIndexRef = useRef<number>(0)
   const previousColorRef = useRef<'green' | 'yellow' | 'red' | null>(null)
+  const previousTrajectoryLengthRef = useRef<number>(0)
+  const trajectoryInitializedRef = useRef<boolean>(false)
+  const trajectoryRef = useRef<TrajectoryPoint[]>([])
   const [trajectory, setTrajectory] = useState<TrajectoryPoint[]>([])
   const cablesMapRef = useRef<Map<string, { coordinates: number[][] }[]>>(new Map())
 
@@ -125,6 +130,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
 
     map.current.on('load', () => {
       isInitializedRef.current = true
+      setMapInitialized(true)
     })
 
     return () => {
@@ -133,6 +139,15 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       shipMarkersRef.current.clear()
       infrastructureMarkersRef.current.forEach(marker => marker.remove())
       infrastructureMarkersRef.current.clear()
+      // Clean up trajectory markers
+      if (trajectoryMarkerRef.current) {
+        trajectoryMarkerRef.current.remove()
+        trajectoryMarkerRef.current = null
+      }
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current)
+        animationIntervalRef.current = null
+      }
       // Clean up cable source and popup
       if (cablePopupRef.current) {
         cablePopupRef.current.remove()
@@ -146,6 +161,11 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       }
       map.current?.remove()
       isInitializedRef.current = false
+      setMapInitialized(false)
+      setTrajectoryReady(false)
+      // Reset trajectory initialization so it can restart on remount
+      trajectoryInitializedRef.current = false
+      currentTrajectoryIndexRef.current = 0
     }
   }, [])
 
@@ -331,7 +351,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
     }
   }, [infrastructure])
 
-  // Fetch trajectory data
+  // Fetch trajectory data periodically
   useEffect(() => {
     const fetchTrajectory = async () => {
       try {
@@ -344,11 +364,41 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
         console.error('Error fetching trajectory:', error)
       }
     }
+    
+    // Initial fetch
     fetchTrajectory()
+    
+    // Set up periodic refresh (every 5 seconds, same as maritime data)
+    const interval = setInterval(fetchTrajectory, 5000)
+    
+    return () => clearInterval(interval)
   }, [])
 
+  // Calculate bearing (angle) between two points in degrees
+  // Returns angle in degrees where 0° = North, 90° = East, 180° = South, 270° = West
+  const calculateBearing = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const dLon = lon2 - lon1
+    const y = Math.sin(dLon) * Math.cos(lat2)
+    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon)
+    const bearing = Math.atan2(y, x)
+    // Convert to degrees and normalize to 0-360
+    return ((bearing * 180 / Math.PI) + 360) % 360
+  }
+  
+  // Convert geographic bearing to SVG rotation angle
+  // Geographic: 0°=N, 90°=E, 180°=S, 270°=W
+  // SVG (clockwise): 0°=E(right), 90°=S(down), 180°=W(left), 270°=N(up)
+  const bearingToRotation = (bearing: number): number => {
+    // SVG rotation is clockwise, geographic bearing is clockwise from North
+    // To convert: subtract 90° and negate (because SVG 0° is East, not North)
+    // Formula: rotation = (90 - bearing) % 360, but we need to handle negatives
+    let rotation = (90 - bearing) % 360
+    if (rotation < 0) rotation += 360
+    return rotation
+  }
+
   // Create ship icon SVG - boat shape
-  const createShipIcon = (color: 'green' | 'yellow' | 'red'): HTMLElement => {
+  const createShipIcon = (color: 'green' | 'yellow' | 'red', rotation: number = 0): HTMLElement => {
     const el = document.createElement('div')
     el.style.width = '40px'
     el.style.height = '40px'
@@ -363,65 +413,60 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       red: '#ef4444'
     }
     
-    // Boat shape SVG - realistic boat/ship from side view
+    // Boat shape SVG - top-down Battleship style with recognizable front
+    // The boat points right (0 degrees) by default, rotation will be applied
     const svg = `
-      <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <!-- Boat hull (curved bottom) -->
-        <path d="M4 28C4 28 6 26 8 26C10 26 12 27 14 27C16 27 18 26 20 26C22 26 24 27 26 27C28 27 30 26 32 26C34 26 36 28 36 28L36 32L4 32L4 28Z" 
+      <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${rotation}deg); transform-origin: center;">
+        <!-- Boat hull (pointed front pointing right, rounded back - top-down view) -->
+        <path d="M6 18 Q6 14 10 14 L24 14 L30 20 L24 26 L10 26 Q6 26 6 22 Z" 
               fill="${colorMap[color]}" 
               stroke="white" 
-              stroke-width="1.5" 
+              stroke-width="2" 
               stroke-linejoin="round"/>
-        <!-- Boat deck line -->
-        <path d="M6 26L8 24L10 25L12 24L14 25L16 24L18 25L20 24L22 25L24 24L26 25L28 24L30 25L32 24L34 26" 
-              stroke="white" 
-              stroke-width="1.5" 
-              stroke-linecap="round" 
-              stroke-linejoin="round"/>
-        <!-- Boat cabin/superstructure -->
-        <path d="M12 24L12 18L20 18L20 24L12 24Z" 
+        <!-- Boat superstructure (positioned toward back/left to indicate direction) -->
+        <rect x="8" y="17" width="8" height="6" 
               fill="${colorMap[color]}" 
               stroke="white" 
               stroke-width="1.5" 
-              opacity="0.9"/>
-        <!-- Boat cabin window -->
-        <rect x="14" y="20" width="4" height="2" fill="white" opacity="0.6"/>
-        <!-- Boat bow (front point) -->
-        <path d="M4 28L6 26L4 24Z" 
-              fill="${colorMap[color]}" 
-              stroke="white" 
-              stroke-width="1.5"/>
-        <!-- Boat stern (back) -->
-        <path d="M36 28L34 26L36 24Z" 
-              fill="${colorMap[color]}" 
-              stroke="white" 
-              stroke-width="1.5"/>
+              rx="1"
+              opacity="0.8"/>
       </svg>
     `
     el.innerHTML = svg
     return el
   }
 
-  // Animate single ship icon along trajectory
+  // Initialize animation only once when both map and trajectory are ready
   useEffect(() => {
-    if (!map.current || !isInitializedRef.current || trajectory.length === 0 || cablesMapRef.current.size === 0) {
+    // Wait for map to be initialized
+    if (!map.current || !mapInitialized) {
       return
     }
 
-    // Clean up any existing animation
-    if (animationIntervalRef.current) {
-      clearInterval(animationIntervalRef.current)
-      animationIntervalRef.current = null
+    // Wait for trajectory data
+    if (!trajectoryReady || trajectory.length === 0) {
+      return
     }
-    if (trajectoryMarkerRef.current) {
-      trajectoryMarkerRef.current.remove()
-      trajectoryMarkerRef.current = null
+
+    // Only initialize once
+    if (trajectoryInitializedRef.current) {
+      return
     }
+
+    // Update trajectory ref
+    trajectoryRef.current = trajectory
 
     // Create initial marker at first point
     const initialPoint = trajectory[0]
-    const initialColor = getVesselColor({ lat: initialPoint.lat, lon: initialPoint.lon }, cablesMapRef.current)
-    const icon = createShipIcon(initialColor)
+    // Use green as default if cables aren't loaded yet
+    const initialColor = cablesMapRef.current.size > 0 
+      ? getVesselColor({ lat: initialPoint.lat, lon: initialPoint.lon }, cablesMapRef.current)
+      : 'green'
+    
+    // Fixed rotation to face WEST (180 degrees)
+    const initialRotation = 180
+    
+    const icon = createShipIcon(initialColor, initialRotation)
     const marker = new maplibregl.Marker({ element: icon })
       .setLngLat([initialPoint.lon, initialPoint.lat])
       .addTo(map.current!)
@@ -429,16 +474,65 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
     trajectoryMarkerRef.current = marker
     currentTrajectoryIndexRef.current = 0
     previousColorRef.current = initialColor
+    previousTrajectoryLengthRef.current = trajectory.length
+    trajectoryInitializedRef.current = true
+    let previousPoint = initialPoint
 
     // Animation function - moves ship along trajectory
+    // Uses trajectoryRef to always get the latest trajectory data
     const animate = () => {
-      if (!map.current || !trajectoryMarkerRef.current || trajectory.length === 0) return
+      const currentTrajectory = trajectoryRef.current
+      if (!map.current || !trajectoryMarkerRef.current || currentTrajectory.length === 0) return
 
       const currentIndex = currentTrajectoryIndexRef.current
-      const point = trajectory[currentIndex]
       
-      // Update color based on proximity
-      const color = getVesselColor({ lat: point.lat, lon: point.lon }, cablesMapRef.current)
+      // Check if we're at or past the last point
+      if (currentIndex >= currentTrajectory.length) {
+        // Remove the ship marker and stop animation
+        if (trajectoryMarkerRef.current) {
+          trajectoryMarkerRef.current.remove()
+          trajectoryMarkerRef.current = null
+        }
+        if (animationIntervalRef.current) {
+          clearInterval(animationIntervalRef.current)
+          animationIntervalRef.current = null
+        }
+        return
+      }
+
+      const point = currentTrajectory[currentIndex]
+      const isLastPoint = currentIndex === currentTrajectory.length - 1
+      
+      // If this is the last point, update position one final time and then remove immediately
+      if (isLastPoint) {
+        // Update to final position
+        trajectoryMarkerRef.current.setLngLat([point.lon, point.lat])
+        
+        // Stop animation
+        if (animationIntervalRef.current) {
+          clearInterval(animationIntervalRef.current)
+          animationIntervalRef.current = null
+        }
+        
+        // Remove the ship marker immediately
+        if (trajectoryMarkerRef.current) {
+          trajectoryMarkerRef.current.remove()
+          trajectoryMarkerRef.current = null
+        }
+        
+        // Reset initialization so it can restart if new trajectory comes in
+        trajectoryInitializedRef.current = false
+        currentTrajectoryIndexRef.current = 0
+        return
+      }
+      
+      // Fixed rotation to face WEST (180 degrees)
+      const rotation = 180
+      
+      // Update color based on proximity (use green as default if cables aren't loaded)
+      const color = cablesMapRef.current.size > 0
+        ? getVesselColor({ lat: point.lat, lon: point.lon }, cablesMapRef.current)
+        : 'green'
       const previousColor = previousColorRef.current
       
       // Check for color transitions and trigger alerts
@@ -458,7 +552,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
           onVesselColorChange({
             id: `alert-red-${point.shipName || 'Vessel'}`,
             type: 'red',
-            message: 'Vessel passing over cable',
+            message: 'Vessel passing over cable with reduced speed',
             timestamp: new Date().toISOString(),
             vesselName: point.shipName || 'Vessel',
             mmsi: point.mmsi || 0,
@@ -470,7 +564,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       // Update marker position
       trajectoryMarkerRef.current.setLngLat([point.lon, point.lat])
       
-      // Update icon color
+      // Update icon color and rotation
       const currentElement = trajectoryMarkerRef.current.getElement()
       const currentSvg = currentElement.querySelector('svg')
       if (currentSvg) {
@@ -488,38 +582,42 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
             element.setAttribute('fill', colorMap[color])
           }
         })
+        // Update rotation
+        currentSvg.style.transform = `rotate(${rotation}deg)`
+        currentSvg.style.transformOrigin = 'center'
       }
 
-      // Update previous color
+      // Update previous color and point
       previousColorRef.current = color
-
-      // Move to next point (stop at end, don't loop)
-      const nextIndex = currentIndex + 1
-      if (nextIndex >= trajectory.length) {
-        // Stop animation when reaching the end
-        if (animationIntervalRef.current) {
-          clearInterval(animationIntervalRef.current)
-          animationIntervalRef.current = null
-        }
-      } else {
-        currentTrajectoryIndexRef.current = nextIndex
-      }
+      previousPoint = point
+      
+      // Move to next point
+      currentTrajectoryIndexRef.current = currentIndex + 1
     }
 
     // Start animation loop (100ms delay between points - adjust for speed)
-    animationIntervalRef.current = setInterval(animate, 100)
+    // Only start if not already running
+    if (!animationIntervalRef.current) {
+      animationIntervalRef.current = setInterval(animate, 100)
+    }
 
     return () => {
-      if (animationIntervalRef.current) {
-        clearInterval(animationIntervalRef.current)
-        animationIntervalRef.current = null
-      }
-      if (trajectoryMarkerRef.current) {
-        trajectoryMarkerRef.current.remove()
-        trajectoryMarkerRef.current = null
-      }
+      // Don't clean up here - let it run until component unmounts
+      // Only clean up on unmount
     }
-  }, [trajectory, infrastructure])
+  }, [mapInitialized, trajectoryReady]) // Depend on both map and trajectory readiness
+
+  // Separate effect to update trajectory ref when trajectory changes (doesn't restart animation)
+  useEffect(() => {
+    trajectoryRef.current = trajectory
+    // Update length reference for tracking
+    if (trajectory.length > 0) {
+      previousTrajectoryLengthRef.current = trajectory.length
+      setTrajectoryReady(true)
+    } else {
+      setTrajectoryReady(false)
+    }
+  }, [trajectory])
 
   return <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
 }

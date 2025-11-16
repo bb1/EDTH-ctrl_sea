@@ -32,6 +32,7 @@ export interface Alert {
   description: string;
   risk_percentage: number;
   timestamp: string;
+  count?: number; // Number of times this alert has occurred for the same ship and level
 }
 
 export interface AlertFilter {
@@ -41,9 +42,14 @@ export interface AlertFilter {
 
 export type RiskLevel = 'low' | 'medium' | 'high';
 
+export interface GeoJSONFeatureCollection {
+  type: 'FeatureCollection';
+  features: any[];
+}
+
 export interface MaritimeData {
   ships: Ship[];
-  infrastructure: Infrastructure[];
+  infrastructure: Infrastructure[] | GeoJSONFeatureCollection;
   alerts: Alert[];
 }
 

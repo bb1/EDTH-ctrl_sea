@@ -25,7 +25,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "4000:4000"
     volumes:
       - ./data/tiles:/tiles:ro
       - ./martin-config.yaml:/config/martin.yaml:ro

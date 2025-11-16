@@ -31,11 +31,16 @@ export async function GET() {
     return NextResponse.json(geoJson)
   } catch (error) {
     console.error('Error fetching Baltic cables:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch infrastructure data' },
-      { status: 500 }
-    )
+    // Return empty GeoJSON instead of error so the app can still function
+    return NextResponse.json({
+      type: 'FeatureCollection',
+      features: []
+    })
   } finally {
-    await closeDb()
+    try {
+      await closeDb()
+    } catch (closeError) {
+      console.error('Error closing database:', closeError)
+    }
   }
 }
