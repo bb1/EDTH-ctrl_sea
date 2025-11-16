@@ -22,6 +22,7 @@ interface Ship {
   lat: number
   long: number
   risk_percentage: number
+  mmsi?: string
 }
 
 interface GeoJSONFeature {
@@ -62,15 +63,22 @@ interface VesselAlert {
   count: number
 }
 
+interface TrailPoint {
+  lat: number
+  lon: number
+  timestamp: string
+}
+
 interface MaritimeMapProps {
   ships: Ship[]
   infrastructure: Infrastructure[] | GeoJSONFeatureCollection
   onVesselClick: (ship: Ship) => void
   onVesselColorChange?: (alert: VesselAlert) => void
   alerts?: Alert[]
+  selectedShipId?: number | null
 }
 
-export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVesselColorChange, alerts = [] }: MaritimeMapProps) {
+export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVesselColorChange, alerts = [], selectedShipId = null }: MaritimeMapProps) {
   const { dataSource } = useDataSource()
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
@@ -93,6 +101,9 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
   const cablesMapRef = useRef<Map<string, { coordinates: number[][] }[]>>(new Map())
   // Track the highest alert level each ship has ever had (never revert to green)
   const shipHighestAlertRef = useRef<Map<number, number>>(new Map())
+  // Trail state and refs
+  const [shipTrail, setShipTrail] = useState<TrailPoint[]>([])
+  const trailSourceRef = useRef<string | null>(null)
 
   // Initialize map only once
   useEffect(() => {
@@ -165,6 +176,13 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
           map.current.removeLayer('cable-lines')
         }
         map.current.removeSource(cableSourceRef.current)
+      }
+      // Clean up trail
+      if (map.current && trailSourceRef.current && map.current.getSource(trailSourceRef.current)) {
+        if (map.current.getLayer('ship-trail-line')) {
+          map.current.removeLayer('ship-trail-line')
+        }
+        map.current.removeSource(trailSourceRef.current)
       }
       map.current?.remove()
       isInitializedRef.current = false
@@ -743,6 +761,110 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
   useEffect(() => {
     dataSourceRef.current = dataSource
   }, [dataSource])
+
+  // Fetch ship trail when a ship is selected
+  useEffect(() => {
+    if (!selectedShipId) {
+      setShipTrail([])
+      return
+    }
+
+    const fetchTrail = async () => {
+      try {
+        // Find the ship to get its MMSI
+        const ship = ships.find(s => s.id === selectedShipId)
+        if (!ship) {
+          setShipTrail([])
+          return
+        }
+
+        // Use MMSI to fetch trail - in some cases ship.id might be MMSI
+        const mmsi = ship.mmsi || ship.id.toString()
+        const response = await fetch(
+          `/api/ship-trail?shipId=${selectedShipId}&mmsi=${mmsi}&dataSource=${dataSource}`
+        )
+        
+        if (response.ok) {
+          const trail = await response.json()
+          setShipTrail(trail)
+        } else {
+          setShipTrail([])
+        }
+      } catch (error) {
+        console.error('Error fetching ship trail:', error)
+        setShipTrail([])
+      }
+    }
+
+    fetchTrail()
+  }, [selectedShipId, ships, dataSource])
+
+  // Render ship trail on map
+  useEffect(() => {
+    if (!map.current || !isInitializedRef.current) return
+
+    const sourceId = 'ship-trail'
+    const layerId = 'ship-trail-line'
+
+    // Remove existing trail if any
+    if (map.current.getLayer(layerId)) {
+      map.current.removeLayer(layerId)
+    }
+    if (map.current.getSource(sourceId)) {
+      map.current.removeSource(sourceId)
+    }
+
+    // If no trail data, we're done
+    if (shipTrail.length === 0) {
+      trailSourceRef.current = null
+      return
+    }
+
+    // Create GeoJSON LineString from trail points
+    const coordinates = shipTrail.map(point => [point.lon, point.lat])
+    
+    const geoJson = {
+      type: 'Feature' as const,
+      geometry: {
+        type: 'LineString' as const,
+        coordinates
+      },
+      properties: {}
+    }
+
+    // Add source
+    map.current.addSource(sourceId, {
+      type: 'geojson',
+      data: geoJson as any
+    })
+
+    // Add layer
+    map.current.addLayer({
+      id: layerId,
+      type: 'line',
+      source: sourceId,
+      paint: {
+        'line-color': '#3b82f6', // Blue color for trail
+        'line-width': 3,
+        'line-opacity': 0.7
+      }
+    })
+
+    trailSourceRef.current = sourceId
+
+    // Cleanup function
+    return () => {
+      if (map.current) {
+        if (map.current.getLayer(layerId)) {
+          map.current.removeLayer(layerId)
+        }
+        if (map.current.getSource(sourceId)) {
+          map.current.removeSource(sourceId)
+        }
+      }
+      trailSourceRef.current = null
+    }
+  }, [shipTrail, mapInitialized])
 
   // Effect to handle data source changes - restart animation for synthetic data
   useEffect(() => {

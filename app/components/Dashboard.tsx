@@ -264,9 +264,10 @@ export function Dashboard() {
           )}
 
           <MaritimeMap
-            ships={data.ships.map(s => ({ id: s.id, name: s.name, lat: s.lat, long: s.long, risk_percentage: s.risk_percentage }))}
+            ships={data.ships.map(s => ({ id: s.id, name: s.name, lat: s.lat, long: s.long, risk_percentage: s.risk_percentage, mmsi: s.mmsi }))}
             infrastructure={data.infrastructure}
             alerts={allAlerts}
+            selectedShipId={selectedShipId}
             onVesselClick={(ship) => {
               const fullShip = data.ships.find(s => s.id === ship.id);
               if (fullShip) setSelectedShipId(fullShip.id);
