@@ -75,10 +75,16 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
   const cableSourceRef = useRef<string | null>(null)
   const cablePopupRef = useRef<maplibregl.Popup | null>(null)
   const isInitializedRef = useRef(false)
+  const [mapInitialized, setMapInitialized] = useState(false)
+  const [trajectoryReady, setTrajectoryReady] = useState(false)
   const trajectoryMarkerRef = useRef<maplibregl.Marker | null>(null)
   const animationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const currentTrajectoryIndexRef = useRef<number>(0)
   const previousColorRef = useRef<'green' | 'yellow' | 'red' | null>(null)
+  const lastPointDebugMarkerRef = useRef<maplibregl.Marker | null>(null)
+  const previousTrajectoryLengthRef = useRef<number>(0)
+  const trajectoryInitializedRef = useRef<boolean>(false)
+  const trajectoryRef = useRef<TrajectoryPoint[]>([])
   const [trajectory, setTrajectory] = useState<TrajectoryPoint[]>([])
   const cablesMapRef = useRef<Map<string, { coordinates: number[][] }[]>>(new Map())
 
@@ -125,6 +131,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
 
     map.current.on('load', () => {
       isInitializedRef.current = true
+      setMapInitialized(true)
     })
 
     return () => {
@@ -133,6 +140,19 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       shipMarkersRef.current.clear()
       infrastructureMarkersRef.current.forEach(marker => marker.remove())
       infrastructureMarkersRef.current.clear()
+      // Clean up trajectory markers
+      if (trajectoryMarkerRef.current) {
+        trajectoryMarkerRef.current.remove()
+        trajectoryMarkerRef.current = null
+      }
+      if (lastPointDebugMarkerRef.current) {
+        lastPointDebugMarkerRef.current.remove()
+        lastPointDebugMarkerRef.current = null
+      }
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current)
+        animationIntervalRef.current = null
+      }
       // Clean up cable source and popup
       if (cablePopupRef.current) {
         cablePopupRef.current.remove()
@@ -146,6 +166,11 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       }
       map.current?.remove()
       isInitializedRef.current = false
+      setMapInitialized(false)
+      setTrajectoryReady(false)
+      // Reset trajectory initialization so it can restart on remount
+      trajectoryInitializedRef.current = false
+      currentTrajectoryIndexRef.current = 0
     }
   }, [])
 
@@ -331,7 +356,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
     }
   }, [infrastructure])
 
-  // Fetch trajectory data
+  // Fetch trajectory data periodically
   useEffect(() => {
     const fetchTrajectory = async () => {
       try {
@@ -344,7 +369,14 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
         console.error('Error fetching trajectory:', error)
       }
     }
+    
+    // Initial fetch
     fetchTrajectory()
+    
+    // Set up periodic refresh (every 5 seconds, same as maritime data)
+    const interval = setInterval(fetchTrajectory, 5000)
+    
+    return () => clearInterval(interval)
   }, [])
 
   // Calculate bearing (angle) between two points in degrees
@@ -409,27 +441,61 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
     return el
   }
 
-  // Animate single ship icon along trajectory
+  // Create debug marker at last trajectory point
   useEffect(() => {
     if (!map.current || !isInitializedRef.current || trajectory.length === 0) {
+      // Clean up debug marker if no trajectory
+      if (lastPointDebugMarkerRef.current) {
+        lastPointDebugMarkerRef.current.remove()
+        lastPointDebugMarkerRef.current = null
+      }
       return
     }
 
-    // Don't restart animation if it's already running - infrastructure changes just update color calculation
-    // The cablesMapRef is already updated by the separate useEffect, so the running animation will use it
-    if (animationIntervalRef.current && trajectoryMarkerRef.current) {
+    // Remove existing debug marker
+    if (lastPointDebugMarkerRef.current) {
+      lastPointDebugMarkerRef.current.remove()
+      lastPointDebugMarkerRef.current = null
+    }
+
+    // Create debug marker at last point
+    const lastPoint = trajectory[trajectory.length - 1]
+    const debugEl = document.createElement('div')
+    debugEl.style.width = '16px'
+    debugEl.style.height = '16px'
+    debugEl.style.backgroundColor = '#ff0000'
+    debugEl.style.border = '2px solid #ffffff'
+    debugEl.style.borderRadius = '50%'
+    debugEl.style.boxShadow = '0 0 8px rgba(255, 0, 0, 0.8)'
+    debugEl.style.cursor = 'pointer'
+    debugEl.title = `Last point: ${lastPoint.lat.toFixed(6)}, ${lastPoint.lon.toFixed(6)}`
+
+    const debugMarker = new maplibregl.Marker({ element: debugEl })
+      .setLngLat([lastPoint.lon, lastPoint.lat])
+      .addTo(map.current!)
+    
+    lastPointDebugMarkerRef.current = debugMarker
+  }, [trajectory])
+
+  // Initialize animation only once when both map and trajectory are ready
+  useEffect(() => {
+    // Wait for map to be initialized
+    if (!map.current || !mapInitialized) {
       return
     }
 
-    // Clean up any existing animation
-    if (animationIntervalRef.current) {
-      clearInterval(animationIntervalRef.current)
-      animationIntervalRef.current = null
+    // Wait for trajectory data
+    if (!trajectoryReady || trajectory.length === 0) {
+      return
     }
-    if (trajectoryMarkerRef.current) {
-      trajectoryMarkerRef.current.remove()
-      trajectoryMarkerRef.current = null
+
+    // Only initialize once
+    if (trajectoryInitializedRef.current) {
+      return
     }
+
+    // Update trajectory ref
+    trajectoryRef.current = trajectory
 
     // Create initial marker at first point
     const initialPoint = trajectory[0]
@@ -449,14 +515,35 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
     trajectoryMarkerRef.current = marker
     currentTrajectoryIndexRef.current = 0
     previousColorRef.current = initialColor
+    previousTrajectoryLengthRef.current = trajectory.length
+    trajectoryInitializedRef.current = true
     let previousPoint = initialPoint
 
     // Animation function - moves ship along trajectory
+    // Uses trajectoryRef to always get the latest trajectory data
     const animate = () => {
-      if (!map.current || !trajectoryMarkerRef.current || trajectory.length === 0) return
+      const currentTrajectory = trajectoryRef.current
+      if (!map.current || !trajectoryMarkerRef.current || currentTrajectory.length === 0) return
 
       const currentIndex = currentTrajectoryIndexRef.current
-      const point = trajectory[currentIndex]
+      
+      // Check if we're at or past the last point
+      if (currentIndex >= currentTrajectory.length) {
+        // Ensure we're at the final position before stopping
+        const lastPoint = currentTrajectory[currentTrajectory.length - 1]
+        if (trajectoryMarkerRef.current && lastPoint) {
+          trajectoryMarkerRef.current.setLngLat([lastPoint.lon, lastPoint.lat])
+        }
+        // Stop animation
+        if (animationIntervalRef.current) {
+          clearInterval(animationIntervalRef.current)
+          animationIntervalRef.current = null
+        }
+        return
+      }
+
+      const point = currentTrajectory[currentIndex]
+      const isLastPoint = currentIndex === currentTrajectory.length - 1
       
       // Fixed rotation to face WEST (180 degrees)
       const rotation = 180
@@ -493,7 +580,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
         }
       }
       
-      // Update marker position
+      // Update marker position - this ensures we reach the last position
       trajectoryMarkerRef.current.setLngLat([point.lon, point.lat])
       
       // Update icon color and rotation
@@ -524,34 +611,42 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       previousPoint = point
 
       // Move to next point (stop at end, don't loop)
-      const nextIndex = currentIndex + 1
-      if (nextIndex >= trajectory.length) {
-        // Stop animation when reaching the end
+      if (isLastPoint) {
+        // We've processed the last point, stop animation
         if (animationIntervalRef.current) {
           clearInterval(animationIntervalRef.current)
           animationIntervalRef.current = null
         }
-        // Keep marker visible at final position
         return
       } else {
-        currentTrajectoryIndexRef.current = nextIndex
+        // Move to next point
+        currentTrajectoryIndexRef.current = currentIndex + 1
       }
     }
 
     // Start animation loop (100ms delay between points - adjust for speed)
-    animationIntervalRef.current = setInterval(animate, 100)
+    // Only start if not already running
+    if (!animationIntervalRef.current) {
+      animationIntervalRef.current = setInterval(animate, 100)
+    }
 
     return () => {
-      if (animationIntervalRef.current) {
-        clearInterval(animationIntervalRef.current)
-        animationIntervalRef.current = null
-      }
-      if (trajectoryMarkerRef.current) {
-        trajectoryMarkerRef.current.remove()
-        trajectoryMarkerRef.current = null
-      }
+      // Don't clean up here - let it run until component unmounts
+      // Only clean up on unmount
     }
-  }, [trajectory, infrastructure])
+  }, [mapInitialized, trajectoryReady]) // Depend on both map and trajectory readiness
+
+  // Separate effect to update trajectory ref when trajectory changes (doesn't restart animation)
+  useEffect(() => {
+    trajectoryRef.current = trajectory
+    // Update length reference for tracking
+    if (trajectory.length > 0) {
+      previousTrajectoryLengthRef.current = trajectory.length
+      setTrajectoryReady(true)
+    } else {
+      setTrajectoryReady(false)
+    }
+  }, [trajectory])
 
   return <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
 }
