@@ -81,7 +81,7 @@ export function Dashboard() {
   const handleVesselColorChange = useCallback((vesselAlert: { id: string; type: 'yellow' | 'red'; message: string; timestamp: string; vesselName: string; mmsi: number; count: number }) => {
     // Convert VesselAlert to Alert format
     const alertType = vesselAlert.type === 'red' ? 'geofence_breach' : 'trajectory_anomaly';
-    const riskPercentage = vesselAlert.type === 'red' ? 90 : 60;
+    const riskPercentage = vesselAlert.type === 'red' ? 90 : 50;
 
     // Try to find ship by MMSI
     const ship = data.ships.find(s => s.mmsi === vesselAlert.mmsi.toString());
