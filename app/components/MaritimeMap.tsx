@@ -552,7 +552,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
           onVesselColorChange({
             id: `alert-red-${point.shipName || 'Vessel'}`,
             type: 'red',
-            message: 'Vessel passing over cable',
+            message: 'Vessel passing over cable with reduced speed',
             timestamp: new Date().toISOString(),
             vesselName: point.shipName || 'Vessel',
             mmsi: point.mmsi || 0,
