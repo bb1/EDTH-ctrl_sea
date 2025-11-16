@@ -45,6 +45,7 @@ export function Dashboard() {
     useMaritimeData();
   const [selectedShipId, setSelectedShipId] = useState<number | null>(null);
   const [trajectoryAlerts, setTrajectoryAlerts] = useState<Alert[]>([]);
+  const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<number>>(new Set());
 
   const handleShipClick = useCallback((ship: Ship) => {
     setSelectedShipId(ship.id);
@@ -70,7 +71,26 @@ export function Dashboard() {
     const deduplicatedBackendAlerts = deduplicateAlerts(data.alerts);
     const combined = [...deduplicatedBackendAlerts, ...trajectoryAlerts];
     // Deduplicate the combined list as well
-    return deduplicateAlerts(combined);
+    const deduplicated = deduplicateAlerts(combined);
+    // Filter out dismissed alerts
+    return deduplicated.filter(alert => !dismissedAlertIds.has(alert.id));
+  }, [data.alerts, trajectoryAlerts, dismissedAlertIds]);
+
+  const handleDismissAlerts = useCallback((shipId: number) => {
+    // Compute all alerts (including dismissed ones) to find all alerts for this ship
+    const deduplicatedBackendAlerts = deduplicateAlerts(data.alerts);
+    const combined = [...deduplicatedBackendAlerts, ...trajectoryAlerts];
+    const allAlertsIncludingDismissed = deduplicateAlerts(combined);
+    
+    // Find all alerts for this ship and mark them as dismissed
+    const shipAlerts = allAlertsIncludingDismissed.filter(alert => alert.ship_id === shipId);
+    setDismissedAlertIds(prev => {
+      const newSet = new Set(prev);
+      shipAlerts.forEach(alert => newSet.add(alert.id));
+      return newSet;
+    });
+    // Also remove from trajectory alerts if they exist
+    setTrajectoryAlerts(prev => prev.filter(alert => alert.ship_id !== shipId));
   }, [data.alerts, trajectoryAlerts]);
 
   const handleExport = useCallback(() => {
@@ -162,6 +182,7 @@ export function Dashboard() {
           <MaritimeMap
             ships={data.ships.map(s => ({ id: s.id, name: s.name, lat: s.lat, long: s.long, risk_percentage: s.risk_percentage }))}
             infrastructure={data.infrastructure}
+            alerts={allAlerts}
             onVesselClick={(ship) => {
               const fullShip = data.ships.find(s => s.id === ship.id);
               if (fullShip) setSelectedShipId(fullShip.id);
@@ -176,6 +197,7 @@ export function Dashboard() {
             ship={selectedShip}
             alerts={allAlerts}
             onClose={handleCloseVesselDetails}
+            onDismissAlerts={handleDismissAlerts}
           />
         </div>
       </div>

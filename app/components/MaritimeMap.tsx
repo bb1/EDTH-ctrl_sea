@@ -5,6 +5,7 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { getVesselColor } from '../lib/utils'
 import { useDataSource } from '../contexts/DataSourceContext'
+import type { Alert } from '../lib/types'
 
 interface Infrastructure {
   id: number
@@ -66,9 +67,10 @@ interface MaritimeMapProps {
   infrastructure: Infrastructure[] | GeoJSONFeatureCollection
   onVesselClick: (ship: Ship) => void
   onVesselColorChange?: (alert: VesselAlert) => void
+  alerts?: Alert[]
 }
 
-export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVesselColorChange }: MaritimeMapProps) {
+export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVesselColorChange, alerts = [] }: MaritimeMapProps) {
   const { dataSource } = useDataSource()
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
@@ -89,6 +91,8 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
   const [trajectory, setTrajectory] = useState<TrajectoryPoint[]>([])
   const dataSourceRef = useRef<'real' | 'synthetic'>(dataSource)
   const cablesMapRef = useRef<Map<string, { coordinates: number[][] }[]>>(new Map())
+  // Track the highest alert level each ship has ever had (never revert to green)
+  const shipHighestAlertRef = useRef<Map<number, number>>(new Map())
 
   // Initialize map only once
   useEffect(() => {
@@ -176,6 +180,14 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
   useEffect(() => {
     if (!map.current || !isInitializedRef.current) return
 
+    // Update highest alert levels for each ship (never revert to green)
+    alerts.forEach(alert => {
+      const currentHighest = shipHighestAlertRef.current.get(alert.ship_id) || 0
+      if (alert.risk_percentage > currentHighest) {
+        shipHighestAlertRef.current.set(alert.ship_id, alert.risk_percentage)
+      }
+    })
+
     const currentMarkers = shipMarkersRef.current
     const shipIds = new Set(ships.map(ship => ship.id))
 
@@ -184,14 +196,36 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       if (!shipIds.has(id)) {
         marker.remove()
         currentMarkers.delete(id)
+        // Also remove from highest alert tracking
+        shipHighestAlertRef.current.delete(id)
       }
     })
 
     // Add or update markers for current ships
     ships.forEach(ship => {
       const existingMarker = currentMarkers.get(ship.id)
-      const risk = ship.risk_percentage
-      const color = risk >= 70 ? '#ef4444' : risk >= 40 ? '#f97316' : '#22c55e'
+      
+      // Find current alerts for this ship
+      const shipAlerts = alerts.filter(alert => alert.ship_id === ship.id)
+      const currentHighestAlertRisk = shipAlerts.length > 0
+        ? Math.max(...shipAlerts.map(alert => alert.risk_percentage))
+        : undefined
+      
+      // Get the highest historical alert risk for this ship (if any)
+      const historicalHighestAlertRisk = shipHighestAlertRef.current.get(ship.id)
+      
+      // Use current alert if available, otherwise use historical, otherwise use ship risk
+      // Never show green - once a ship has had an alert, remember it
+      let color: string
+      const riskToUse = currentHighestAlertRisk ?? historicalHighestAlertRisk ?? ship.risk_percentage
+      
+      if (historicalHighestAlertRisk !== undefined || currentHighestAlertRisk !== undefined) {
+        // Ship has had or currently has an alert - use highest risk, never green
+        color = riskToUse >= 70 ? '#ef4444' : '#eab308' // red or yellow, never green
+      } else {
+        // No alerts ever - use ship's current risk, but never green
+        color = riskToUse >= 70 ? '#ef4444' : riskToUse >= 40 ? '#f97316' : '#6b7280' // red, orange, or gray (never green)
+      }
 
       if (existingMarker) {
         // Update existing marker position and color if changed
@@ -199,19 +233,28 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
         if (lng !== ship.long || lat !== ship.lat) {
           existingMarker.setLngLat([ship.long, ship.lat])
         }
-        // Update color if risk changed
+        // Update color and size if changed
         const el = existingMarker.getElement()
         if (el.style.backgroundColor !== color) {
           el.style.backgroundColor = color
         }
+        // Ensure marker is small dot (8px)
+        if (el.style.width !== '8px' || el.style.height !== '8px') {
+          el.style.width = '8px'
+          el.style.height = '8px'
+          if (!el.style.border) {
+            el.style.border = '1px solid rgba(255, 255, 255, 0.5)'
+          }
+        }
       } else {
-        // Create new marker
+        // Create new marker - smaller dot
         const el = document.createElement('div')
-        el.style.width = '20px'
-        el.style.height = '20px'
+        el.style.width = '8px'
+        el.style.height = '8px'
         el.style.backgroundColor = color
         el.style.borderRadius = '50%'
         el.style.cursor = 'pointer'
+        el.style.border = '1px solid rgba(255, 255, 255, 0.5)'
         el.addEventListener('click', () => onVesselClick(ship))
 
         const marker = new maplibregl.Marker({ element: el })
@@ -221,7 +264,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
         currentMarkers.set(ship.id, marker)
       }
     })
-  }, [ships, onVesselClick])
+  }, [ships, alerts, onVesselClick])
 
   // Build cables map for proximity checking
   useEffect(() => {

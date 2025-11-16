@@ -8,9 +8,10 @@ interface VesselDetailsProps {
   ship: Ship | null;
   alerts: Alert[];
   onClose: () => void;
+  onDismissAlerts?: (shipId: number) => void;
 }
 
-export function VesselDetails({ ship, alerts, onClose }: VesselDetailsProps) {
+export function VesselDetails({ ship, alerts, onClose, onDismissAlerts }: VesselDetailsProps) {
   if (!ship) {
     return (
       <div className="flex flex-col h-full bg-slate-800 border-l border-slate-700 items-center justify-center px-6">
@@ -179,10 +180,17 @@ export function VesselDetails({ ship, alerts, onClose }: VesselDetailsProps) {
           </h3>
           <div className="space-y-2">
             <button className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium">
-              Track Vessel
+              Confirm Threat
             </button>
-            <button className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg transition-colors text-sm font-medium">
-              Generate Report
+            <button 
+              onClick={() => {
+                if (ship && onDismissAlerts) {
+                  onDismissAlerts(ship.id);
+                }
+              }}
+              className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg transition-colors text-sm font-medium"
+            >
+              Disregard Threat
             </button>
           </div>
         </div>
