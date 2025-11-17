@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getDb, closeDb } from '../../../data_sources/ais/db/db';
-import { getVesselClassification, getFlagFromMMSI } from '../../../app/lib/utils';
+import { getDb } from '../../db';
+import { getVesselClassification, getFlagFromMMSI } from '../../lib/utils';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -182,11 +182,5 @@ export async function GET(request: Request) {
     console.error('Error fetching ships:', error);
     // Return empty array on error
     return NextResponse.json([]);
-  } finally {
-    try {
-      await closeDb();
-    } catch (closeError) {
-      console.error('Error closing database:', closeError);
-    }
   }
 }

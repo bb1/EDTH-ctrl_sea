@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getDb, closeDb } from '../../../data_sources/ais/db/db'
+import { getDb } from '../../db'
 
 interface TrajectoryPoint {
   lat: number
@@ -126,12 +126,6 @@ export async function GET(request: Request) {
       { error: 'Failed to load trajectory data' },
       { status: 500 }
     )
-  } finally {
-    try {
-      await closeDb()
-    } catch (closeError) {
-      console.error('Error closing database:', closeError)
-    }
   }
 }
 
