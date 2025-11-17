@@ -321,7 +321,8 @@ export function getInfrastructureIcon(type: 'pipeline' | 'cable' | 'platform'): 
 
 /**
  * Map AIS ship type code to human-readable vessel classification
- * Based on IMO/ITU standard AIS vessel type codes
+ * Based on IMO/ITU standard AIS vessel type codes (ITU-R M.1371-5)
+ * Reference: https://api.vesselfinder.com/docs/ref-aistypes.html
  */
 export function getVesselClassification(shipType: number | null | undefined): string {
   if (shipType === null || shipType === undefined) {
@@ -330,50 +331,117 @@ export function getVesselClassification(shipType: number | null | undefined): st
 
   // AIS vessel type codes (0-99) - Standard ITU-R M.1371-5
   const typeMap: Record<number, string> = {
-    0: 'Not specified',
-    1: 'Reserved',
-    2: 'Wing in ground',
-    3: 'Special craft',
-    4: 'High speed craft',
-    5: 'Special craft',
-    6: 'Passenger',
-    7: 'Cargo',
-    8: 'Tanker',
-    9: 'Other',
+    // 0-19: Not available / Reserved
+    0: 'Not available',
+    
+    // 20-29: Wing in ground (WIG)
+    20: 'Wing in ground (WIG)',
+    21: 'Wing in ground (WIG), Hazardous category A',
+    22: 'Wing in ground (WIG), Hazardous category B',
+    23: 'Wing in ground (WIG), Hazardous category C',
+    24: 'Wing in ground (WIG), Hazardous category D',
+    25: 'Wing in ground (WIG), Reserved',
+    26: 'Wing in ground (WIG), Reserved',
+    27: 'Wing in ground (WIG), Reserved',
+    28: 'Wing in ground (WIG), Reserved',
+    29: 'Wing in ground (WIG), Reserved',
+    
+    // 30-39: Various vessel types
+    30: 'Fishing',
+    31: 'Towing',
+    32: 'Towing (length > 200m or breadth > 25m)',
+    33: 'Dredging or underwater ops',
+    34: 'Diving ops',
+    35: 'Military ops',
+    36: 'Sailing',
+    37: 'Pleasure Craft',
+    38: 'Reserved',
+    39: 'Reserved',
+    
+    // 40-49: High speed craft (HSC)
+    40: 'High speed craft (HSC)',
+    41: 'High speed craft (HSC), Hazardous category A',
+    42: 'High speed craft (HSC), Hazardous category B',
+    43: 'High speed craft (HSC), Hazardous category C',
+    44: 'High speed craft (HSC), Hazardous category D',
+    45: 'High speed craft (HSC), Reserved',
+    46: 'High speed craft (HSC), Reserved',
+    47: 'High speed craft (HSC), Reserved',
+    48: 'High speed craft (HSC), Reserved',
+    49: 'High speed craft (HSC), No additional information',
+    
+    // 50-59: Special purpose vessels
+    50: 'Pilot Vessel',
+    51: 'Search and Rescue vessel',
+    52: 'Tug',
+    53: 'Port Tender',
+    54: 'Anti-pollution equipment',
+    55: 'Law Enforcement',
+    56: 'Spare - Local Vessel',
+    57: 'Spare - Local Vessel',
+    58: 'Medical Transport',
+    59: 'Noncombatant ship according to RR Resolution No. 18',
+    
+    // 60-69: Passenger
+    60: 'Passenger',
+    61: 'Passenger, Hazardous category A',
+    62: 'Passenger, Hazardous category B',
+    63: 'Passenger, Hazardous category C',
+    64: 'Passenger, Hazardous category D',
+    65: 'Passenger, Reserved',
+    66: 'Passenger, Reserved',
+    67: 'Passenger, Reserved',
+    68: 'Passenger, Reserved',
+    69: 'Passenger, No additional information',
+    
+    // 70-79: Cargo
+    70: 'Cargo',
+    71: 'Cargo, Hazardous category A',
+    72: 'Cargo, Hazardous category B',
+    73: 'Cargo, Hazardous category C',
+    74: 'Cargo, Hazardous category D',
+    75: 'Cargo, Reserved',
+    76: 'Cargo, Reserved',
+    77: 'Cargo, Reserved',
+    78: 'Cargo, Reserved',
+    79: 'Cargo, No additional information',
+    
+    // 80-89: Tanker
+    80: 'Tanker',
+    81: 'Tanker, Hazardous category A',
+    82: 'Tanker, Hazardous category B',
+    83: 'Tanker, Hazardous category C',
+    84: 'Tanker, Hazardous category D',
+    85: 'Tanker, Reserved',
+    86: 'Tanker, Reserved',
+    87: 'Tanker, Reserved',
+    88: 'Tanker, Reserved',
+    89: 'Tanker, No additional information',
+    
+    // 90-99: Other Type
+    90: 'Other Type',
+    91: 'Other Type, Hazardous category A',
+    92: 'Other Type, Hazardous category B',
+    93: 'Other Type, Hazardous category C',
+    94: 'Other Type, Hazardous category D',
+    95: 'Other Type, Reserved',
+    96: 'Other Type, Reserved',
+    97: 'Other Type, Reserved',
+    98: 'Other Type, Reserved',
+    99: 'Other Type, No additional information',
   };
 
-  // Range-based classifications
-  if (shipType >= 20 && shipType <= 29) {
-    return 'Wing in ground';
-  }
-  if (shipType >= 30 && shipType <= 39) {
-    return 'Fishing';
-  }
-  if (shipType >= 40 && shipType <= 49) {
-    return 'Towing';
-  }
-  if (shipType >= 50 && shipType <= 59) {
-    return 'Dredging or underwater operations';
-  }
-  if (shipType >= 60 && shipType <= 69) {
-    return 'Diving operations';
-  }
-  if (shipType >= 70 && shipType <= 79) {
-    return 'Military operations';
-  }
-  if (shipType >= 80 && shipType <= 89) {
-    return 'Sailing';
-  }
-  if (shipType >= 90 && shipType <= 99) {
-    return 'Pleasure craft';
-  }
-  
-  // Specific mappings for 0-9
+  // Return specific mapping if available
   if (typeMap[shipType]) {
     return typeMap[shipType];
   }
   
-  // Default fallback
+  // Handle reserved ranges (1-19)
+  if (shipType >= 1 && shipType <= 19) {
+    return 'Reserved for future use';
+  }
+  
+  // Default fallback for any unexpected values
   return `Type ${shipType}`;
 }
 
