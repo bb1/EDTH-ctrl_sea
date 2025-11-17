@@ -8,12 +8,34 @@ const API_BASE = typeof window !== 'undefined'
   ? '' // Use relative URLs on client side (Next.js API routes)
   : (process.env.BACKEND_URL || 'http://localhost:3001'); // Server-side: direct backend
 
+export interface ShipFilters {
+  flag?: string;
+  shipName?: string;
+  destination?: string;
+  classification?: string;
+  mmsi?: string;
+}
+
 /**
  * Fetch all ships from backend API
  */
-export async function fetchShips(dataSource: 'real' | 'synthetic' = 'real'): Promise<Ship[]> {
+export async function fetchShips(
+  dataSource: 'real' | 'synthetic' = 'real',
+  filters?: ShipFilters
+): Promise<Ship[]> {
   try {
-    const response = await fetch(`/api/ships?dataSource=${dataSource}`, {
+    const params = new URLSearchParams();
+    params.set('dataSource', dataSource);
+    
+    if (filters) {
+      if (filters.flag) params.set('flag', filters.flag);
+      if (filters.shipName) params.set('shipName', filters.shipName);
+      if (filters.destination) params.set('destination', filters.destination);
+      if (filters.classification) params.set('classification', filters.classification);
+      if (filters.mmsi) params.set('mmsi', filters.mmsi);
+    }
+    
+    const response = await fetch(`/api/ships?${params.toString()}`, {
       cache: 'no-store',
     });
 
@@ -80,14 +102,17 @@ export async function fetchAlerts(): Promise<Alert[]> {
 /**
  * Fetch all maritime data (ships, infrastructure, alerts)
  */
-export async function fetchMaritimeData(dataSource: 'real' | 'synthetic' = 'real'): Promise<{
+export async function fetchMaritimeData(
+  dataSource: 'real' | 'synthetic' = 'real',
+  filters?: ShipFilters
+): Promise<{
   ships: Ship[];
   infrastructure: Infrastructure[] | any;
   alerts: Alert[];
 }> {
   try {
     const [ships, infrastructure, alerts] = await Promise.all([
-      fetchShips(dataSource),
+      fetchShips(dataSource, filters),
       fetchInfrastructure(),
       fetchAlerts(),
     ]);

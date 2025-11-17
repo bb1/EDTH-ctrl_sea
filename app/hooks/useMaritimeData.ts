@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { fetchMaritimeData, checkBackendConnection } from '../lib/api';
+import { fetchMaritimeData, checkBackendConnection, type ShipFilters } from '../lib/api';
 import { useDataSource } from '../contexts/DataSourceContext';
 import { getFlagFromMMSI } from '../lib/utils';
 import type { MaritimeData, Ship } from '../lib/types';
 
 const REFRESH_INTERVAL = 5000; // 5 seconds
 
-export function useMaritimeData() {
+export function useMaritimeData(filters?: ShipFilters) {
   const { dataSource } = useDataSource();
   const [data, setData] = useState<MaritimeData>({
     ships: [],
@@ -35,78 +35,9 @@ export function useMaritimeData() {
         return;
       }
 
-      // Fetch data with current data source
-      let newData = await fetchMaritimeData(dataSource);
-      
-      // In synthetic mode, create ships from trajectory data
-      if (dataSource === 'synthetic') {
-        try {
-          const trajectoryResponse = await fetch(`/api/trajectory?dataSource=synthetic`, {
-            cache: 'no-store',
-          });
-          if (trajectoryResponse.ok) {
-            const trajectory = await trajectoryResponse.json();
-            // Group trajectory points by MMSI and create ships
-            // Use MMSI as ship ID for consistency with alerts
-            const shipsMap = new Map<number, Ship>();
-            trajectory.forEach((point: any, index: number) => {
-              const mmsi = point.mmsi || 0;
-              if (!shipsMap.has(mmsi)) {
-                // Create a ship from the first occurrence of this MMSI
-                // Use MMSI as ID to ensure consistency with alerts
-                shipsMap.set(mmsi, {
-                  id: mmsi, // Use MMSI as ID for consistency
-                  mmsi: mmsi.toString(),
-                  name: point.shipName || 'Unknown',
-                  flag: getFlagFromMMSI(mmsi),
-                  origin: 'Unknown',
-                  destination: 'Unknown',
-                  lat: point.lat || 0,
-                  long: point.lon || 0,
-                  velocity: 0,
-                  risk_percentage: 0,
-                  last_position_time: point.timestamp || new Date().toISOString(),
-                  data_source: 'AIS',
-                });
-              } else {
-                // Update ship with latest position
-                const ship = shipsMap.get(mmsi)!;
-                ship.lat = point.lat || ship.lat;
-                ship.long = point.lon || ship.long;
-                ship.last_position_time = point.timestamp || ship.last_position_time;
-              }
-            });
-            newData.ships = Array.from(shipsMap.values());
-            
-            // Also create ships from alerts that don't have corresponding trajectory data
-            // This handles cases where alerts exist but ships aren't in trajectory yet
-            newData.alerts.forEach(alert => {
-              if (alert.ship_id > 0 && !shipsMap.has(alert.ship_id)) {
-                // Create a ship from alert data
-                shipsMap.set(alert.ship_id, {
-                  id: alert.ship_id,
-                  mmsi: alert.ship_id.toString(),
-                  name: alert.vessel_name || 'Unknown',
-                  flag: getFlagFromMMSI(alert.ship_id),
-                  origin: 'Unknown',
-                  destination: 'Unknown',
-                  lat: 0, // Position unknown, will be updated when trajectory data arrives
-                  long: 0,
-                  velocity: 0,
-                  risk_percentage: alert.risk_percentage,
-                  last_position_time: alert.timestamp,
-                  data_source: 'AIS',
-                });
-              }
-            });
-            
-            // Update ships array with any ships created from alerts
-            newData.ships = Array.from(shipsMap.values());
-          }
-        } catch (trajectoryError) {
-          console.error('Error fetching trajectory for synthetic ships:', trajectoryError);
-        }
-      }
+      // Fetch data with current data source and filters
+      // Backend now handles all filtering, including synthetic data
+      const newData = await fetchMaritimeData(dataSource, filters);
       
       setData(newData);
       setLastUpdate(new Date());
@@ -118,7 +49,7 @@ export function useMaritimeData() {
     } finally {
       setLoading(false);
     }
-  }, [dataSource]);
+  }, [dataSource, filters]);
 
   useEffect(() => {
     // Initial fetch

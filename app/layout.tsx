@@ -4,7 +4,7 @@ import { DataSourceProvider } from './contexts/DataSourceContext';
 
 export const metadata: Metadata = {
   title: 'Maritime Monitor - EDTH-CTRL-SEA',
-  description: 'NATO maritime surveillance system for Baltic Sea critical infrastructure protection',
+  description: 'Maritime surveillance system for Baltic Sea critical infrastructure protection',
 };
 
 export default function RootLayout({

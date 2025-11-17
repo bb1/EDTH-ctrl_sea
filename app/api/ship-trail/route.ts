@@ -44,11 +44,11 @@ export async function GET(request: Request) {
         return NextResponse.json([])
       }
 
-      // Get current time and 3 hours ago
+      // Get current time and 24 hours ago
       const now = new Date()
-      const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000)
+      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
 
-      // Extract trajectory points for the specified ship within last 3 hours
+      // Extract trajectory points for the specified ship within last 24 hours
       const trail: TrailPoint[] = data
         .filter((item: any) => {
           const itemMmsi = item.MetaData?.MMSI
@@ -60,7 +60,7 @@ export async function GET(request: Request) {
             return false
           }
           const itemDate = new Date(itemTime)
-          return itemDate >= threeHoursAgo && itemDate <= now
+          return itemDate >= twentyFourHoursAgo && itemDate <= now
         })
         .map((item: any) => ({
           lat: item.MetaData.latitude,
@@ -93,7 +93,7 @@ export async function GET(request: Request) {
       return NextResponse.json([])
     }
 
-    // Get position reports for the last 3 hours for this MMSI
+    // Get position reports for the last 24 hours for this MMSI
     const positionReports = await db`
       SELECT 
         ST_Y(pr.location) as latitude,
@@ -101,7 +101,7 @@ export async function GET(request: Request) {
         pr.time_utc
       FROM position_reports pr
       WHERE pr.mmsi = ${targetMmsi}
-        AND pr.time_utc >= NOW() - INTERVAL '3 hours'
+        AND pr.time_utc >= NOW() - INTERVAL '24 hours'
       ORDER BY pr.time_utc ASC
     `
 

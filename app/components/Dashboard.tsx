@@ -5,8 +5,10 @@ import { Header } from './Header';
 import MaritimeMap from './MaritimeMap';
 import { AlertsFeed } from './AlertsFeed';
 import { VesselDetails } from './VesselDetails';
+import type { ShipFilterState } from './ShipFilter';
 import { useMaritimeData } from '../hooks/useMaritimeData';
 import { exportAlertsToCSV, downloadCSV, getFlagFromMMSI } from '../lib/utils';
+import type { ShipFilters } from '../lib/api';
 import type { Ship, Alert } from '../lib/types';
 
 // Helper function to deduplicate alerts by ship_id and alert_type
@@ -41,8 +43,28 @@ function deduplicateAlerts(alerts: Alert[]): Alert[] {
 }
 
 export function Dashboard() {
+  const [shipFiltersUI, setShipFiltersUI] = useState<ShipFilterState>({
+    flag: '',
+    shipName: '',
+    destination: '',
+    classification: '',
+    mmsi: '',
+  });
+  const [showTrails, setShowTrails] = useState(false);
+
+  // Convert UI filters to API filters (only include non-empty values)
+  const apiFilters = useMemo((): ShipFilters | undefined => {
+    const filters: ShipFilters = {};
+    if (shipFiltersUI.flag) filters.flag = shipFiltersUI.flag;
+    if (shipFiltersUI.shipName) filters.shipName = shipFiltersUI.shipName;
+    if (shipFiltersUI.destination) filters.destination = shipFiltersUI.destination;
+    if (shipFiltersUI.classification) filters.classification = shipFiltersUI.classification;
+    if (shipFiltersUI.mmsi) filters.mmsi = shipFiltersUI.mmsi;
+    return Object.keys(filters).length > 0 ? filters : undefined;
+  }, [shipFiltersUI]);
+
   const { data, loading, error, connected, lastUpdate, refreshData, getShipById } =
-    useMaritimeData();
+    useMaritimeData(apiFilters);
   const [selectedShipId, setSelectedShipId] = useState<number | null>(null);
   const [trajectoryAlerts, setTrajectoryAlerts] = useState<Alert[]>([]);
   const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<number>>(new Set());
@@ -237,12 +259,16 @@ export function Dashboard() {
       />
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Alerts Feed (25%) */}
+        {/* Left Sidebar - Filters and Alerts Feed (25%) */}
         <div className="w-96 flex-shrink-0">
           <AlertsFeed
             alerts={allAlerts}
             ships={data.ships}
             onAlertClick={handleAlertClick}
+            shipFilters={shipFiltersUI}
+            onShipFiltersChange={setShipFiltersUI}
+            showTrails={showTrails}
+            onShowTrailsChange={setShowTrails}
           />
         </div>
 
@@ -273,6 +299,7 @@ export function Dashboard() {
               if (fullShip) setSelectedShipId(fullShip.id);
             }}
             onVesselColorChange={handleVesselColorChange}
+            showTrailsForShips={showTrails ? data.ships.map(s => s.id) : []}
           />
         </div>
 

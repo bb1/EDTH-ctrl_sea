@@ -76,9 +76,10 @@ interface MaritimeMapProps {
   onVesselColorChange?: (alert: VesselAlert) => void
   alerts?: Alert[]
   selectedShipId?: number | null
+  showTrailsForShips?: number[] // Array of ship IDs to show trails for
 }
 
-export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVesselColorChange, alerts = [], selectedShipId = null }: MaritimeMapProps) {
+export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVesselColorChange, alerts = [], selectedShipId = null, showTrailsForShips = [] }: MaritimeMapProps) {
   const { dataSource } = useDataSource()
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
@@ -104,6 +105,9 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
   // Trail state and refs
   const [shipTrail, setShipTrail] = useState<TrailPoint[]>([])
   const trailSourceRef = useRef<string | null>(null)
+  // Multiple ship trails state
+  const [multipleShipTrails, setMultipleShipTrails] = useState<Map<number, TrailPoint[]>>(new Map())
+  const multipleTrailSourcesRef = useRef<Map<number, string>>(new Map())
 
   // Initialize map only once
   useEffect(() => {
@@ -184,6 +188,19 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
         }
         map.current.removeSource(trailSourceRef.current)
       }
+      // Clean up multiple trails
+      multipleTrailSourcesRef.current.forEach((sourceId, shipId) => {
+        if (map.current) {
+          const layerId = `ship-trail-line-${shipId}`
+          if (map.current.getLayer(layerId)) {
+            map.current.removeLayer(layerId)
+          }
+          if (map.current.getSource(sourceId)) {
+            map.current.removeSource(sourceId)
+          }
+        }
+      })
+      multipleTrailSourcesRef.current.clear()
       map.current?.remove()
       isInitializedRef.current = false
       setMapInitialized(false)
@@ -799,7 +816,7 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
     fetchTrail()
   }, [selectedShipId, ships, dataSource])
 
-  // Render ship trail on map
+  // Render ship trail on map (for selected ship)
   useEffect(() => {
     if (!map.current || !isInitializedRef.current) return
 
@@ -865,6 +882,119 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
       trailSourceRef.current = null
     }
   }, [shipTrail, mapInitialized])
+
+  // Fetch trails for multiple ships when showTrailsForShips changes
+  useEffect(() => {
+    if (!showTrailsForShips || showTrailsForShips.length === 0) {
+      setMultipleShipTrails(new Map())
+      return
+    }
+
+    const fetchTrails = async () => {
+      const trailsMap = new Map<number, TrailPoint[]>()
+      
+      await Promise.all(
+        showTrailsForShips.map(async (shipId) => {
+          try {
+            const ship = ships.find(s => s.id === shipId)
+            if (!ship) return
+
+            const mmsi = ship.mmsi || ship.id.toString()
+            const response = await fetch(
+              `/api/ship-trail?shipId=${shipId}&mmsi=${mmsi}&dataSource=${dataSource}`
+            )
+            
+            if (response.ok) {
+              const trail = await response.json()
+              if (trail.length > 0) {
+                trailsMap.set(shipId, trail)
+              }
+            }
+          } catch (error) {
+            console.error(`Error fetching trail for ship ${shipId}:`, error)
+          }
+        })
+      )
+
+      setMultipleShipTrails(trailsMap)
+    }
+
+    fetchTrails()
+  }, [showTrailsForShips, ships, dataSource])
+
+  // Render multiple ship trails on map
+  useEffect(() => {
+    if (!map.current || !isInitializedRef.current) return
+
+    // Remove old trails that are no longer in showTrailsForShips
+    const currentShipIds = new Set(showTrailsForShips)
+    multipleTrailSourcesRef.current.forEach((sourceId, shipId) => {
+      if (!currentShipIds.has(shipId)) {
+        const layerId = `ship-trail-line-${shipId}`
+        if (map.current!.getLayer(layerId)) {
+          map.current!.removeLayer(layerId)
+        }
+        if (map.current!.getSource(sourceId)) {
+          map.current!.removeSource(sourceId)
+        }
+        multipleTrailSourcesRef.current.delete(shipId)
+      }
+    })
+
+    // Add/update trails for ships in showTrailsForShips
+    multipleShipTrails.forEach((trail, shipId) => {
+      // Skip if this is the selected ship (it has its own trail)
+      if (shipId === selectedShipId) return
+
+      const sourceId = `ship-trail-${shipId}`
+      const layerId = `ship-trail-line-${shipId}`
+
+      // Remove existing trail if any
+      if (map.current!.getLayer(layerId)) {
+        map.current!.removeLayer(layerId)
+      }
+      if (map.current!.getSource(sourceId)) {
+        map.current!.removeSource(sourceId)
+      }
+
+      if (trail.length === 0) {
+        multipleTrailSourcesRef.current.delete(shipId)
+        return
+      }
+
+      // Create GeoJSON LineString from trail points
+      const coordinates = trail.map(point => [point.lon, point.lat])
+      
+      const geoJson = {
+        type: 'Feature' as const,
+        geometry: {
+          type: 'LineString' as const,
+          coordinates
+        },
+        properties: {}
+      }
+
+      // Add source
+      map.current!.addSource(sourceId, {
+        type: 'geojson',
+        data: geoJson as any
+      })
+
+      // Add layer with slightly different styling for multiple trails
+      map.current!.addLayer({
+        id: layerId,
+        type: 'line',
+        source: sourceId,
+        paint: {
+          'line-color': '#60a5fa', // Lighter blue for multiple trails
+          'line-width': 2,
+          'line-opacity': 0.5
+        }
+      })
+
+      multipleTrailSourcesRef.current.set(shipId, sourceId)
+    })
+  }, [multipleShipTrails, mapInitialized, showTrailsForShips, selectedShipId])
 
   // Effect to handle data source changes - restart animation for synthetic data
   useEffect(() => {

@@ -4,14 +4,27 @@ import { useState, useMemo } from 'react';
 import { AlertTriangle, Clock, Filter } from 'lucide-react';
 import type { Alert, AlertFilter, Ship } from '../lib/types';
 import { getRiskColor, formatTimestamp, getRiskLevel } from '../lib/utils';
+import { ShipFilter, type ShipFilterState } from './ShipFilter';
 
 interface AlertsFeedProps {
   alerts: Alert[];
   ships: Ship[];
   onAlertClick: (alert: Alert) => void;
+  shipFilters: ShipFilterState;
+  onShipFiltersChange: (filters: ShipFilterState) => void;
+  showTrails: boolean;
+  onShowTrailsChange: (show: boolean) => void;
 }
 
-export function AlertsFeed({ alerts, ships, onAlertClick }: AlertsFeedProps) {
+export function AlertsFeed({
+  alerts,
+  ships,
+  onAlertClick,
+  shipFilters,
+  onShipFiltersChange,
+  showTrails,
+  onShowTrailsChange,
+}: AlertsFeedProps) {
   const [filter, setFilter] = useState<AlertFilter>({
     timeRange: '24h',
     riskLevel: 'all',
@@ -79,6 +92,13 @@ export function AlertsFeed({ alerts, ships, onAlertClick }: AlertsFeedProps) {
 
   return (
     <div className="flex flex-col h-full bg-slate-800 border-r border-slate-700">
+      <ShipFilter
+        ships={ships}
+        filters={shipFilters}
+        onFiltersChange={onShipFiltersChange}
+        showTrails={showTrails}
+        onShowTrailsChange={onShowTrailsChange}
+      />
       {/* Header */}
       <div className="px-4 py-4 border-b border-slate-700">
         <div className="flex items-center justify-between mb-3">
