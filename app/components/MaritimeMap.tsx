@@ -795,10 +795,10 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
           return
         }
 
-        // Use MMSI to fetch trail - in some cases ship.id might be MMSI
+        // Use MMSI to fetch trail
         const mmsi = ship.mmsi || ship.id.toString()
         const response = await fetch(
-          `/api/ship-trail?shipId=${selectedShipId}&mmsi=${mmsi}&dataSource=${dataSource}`
+          `/api/ship-trail?mmsi=${mmsi}&dataSource=${dataSource}`
         )
         
         if (response.ok) {
@@ -891,32 +891,62 @@ export default function MaritimeMap({ ships, infrastructure, onVesselClick, onVe
     }
 
     const fetchTrails = async () => {
-      const trailsMap = new Map<number, TrailPoint[]>()
-      
-      await Promise.all(
-        showTrailsForShips.map(async (shipId) => {
-          try {
-            const ship = ships.find(s => s.id === shipId)
-            if (!ship) return
+      try {
+        // Collect all MMSIs for bulk request
+        const mmsiToShipIdMap = new Map<string, number>()
+        const mmsiList: string[] = []
 
+        showTrailsForShips.forEach((shipId) => {
+          const ship = ships.find(s => s.id === shipId)
+          if (ship) {
             const mmsi = ship.mmsi || ship.id.toString()
-            const response = await fetch(
-              `/api/ship-trail?shipId=${shipId}&mmsi=${mmsi}&dataSource=${dataSource}`
-            )
-            
-            if (response.ok) {
-              const trail = await response.json()
-              if (trail.length > 0) {
-                trailsMap.set(shipId, trail)
-              }
-            }
-          } catch (error) {
-            console.error(`Error fetching trail for ship ${shipId}:`, error)
+            mmsiList.push(mmsi)
+            mmsiToShipIdMap.set(mmsi, shipId)
           }
         })
-      )
 
-      setMultipleShipTrails(trailsMap)
+        if (mmsiList.length === 0) {
+          setMultipleShipTrails(new Map())
+          return
+        }
+
+        // Make single bulk request with comma-separated MMSIs
+        const response = await fetch(
+          `/api/ship-trail?mmsi=${mmsiList.join(',')}&dataSource=${dataSource}`
+        )
+        
+        if (response.ok) {
+          const trailsData = await response.json()
+          const trailsMap = new Map<number, TrailPoint[]>()
+
+          // Handle response - could be array (single) or object (bulk)
+          if (Array.isArray(trailsData)) {
+            // Single MMSI response (backward compatibility)
+            if (mmsiList.length === 1 && trailsData.length > 0) {
+              const shipId = mmsiToShipIdMap.get(mmsiList[0])
+              if (shipId) {
+                trailsMap.set(shipId, trailsData)
+              }
+            }
+          } else {
+            // Bulk response - object with MMSI as keys
+            Object.keys(trailsData).forEach(mmsi => {
+              const shipId = mmsiToShipIdMap.get(mmsi)
+              const trail = trailsData[mmsi]
+              if (shipId && Array.isArray(trail) && trail.length > 0) {
+                trailsMap.set(shipId, trail)
+              }
+            })
+          }
+
+          setMultipleShipTrails(trailsMap)
+        } else {
+          setMultipleShipTrails(new Map())
+        }
+      } catch (error) {
+        console.error('Error fetching ship trails:', error)
+        setMultipleShipTrails(new Map())
+      }
     }
 
     fetchTrails()

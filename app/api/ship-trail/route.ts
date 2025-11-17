@@ -9,13 +9,27 @@ interface TrailPoint {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const shipId = searchParams.get('shipId')
-  const mmsi = searchParams.get('mmsi')
+  const mmsiParam = searchParams.get('mmsi')
   const dataSource = searchParams.get('dataSource') || 'real'
 
-  if (!shipId && !mmsi) {
+  if (!mmsiParam) {
     return NextResponse.json(
-      { error: 'shipId or mmsi parameter is required' },
+      { error: 'mmsi parameter is required (comma-separated list for bulk requests)' },
+      { status: 400 }
+    )
+  }
+
+  // Parse comma-separated MMSI list
+  const mmsiList = mmsiParam
+    .split(',')
+    .map(m => m.trim())
+    .filter(m => m.length > 0)
+    .map(m => parseInt(m))
+    .filter(m => !isNaN(m))
+
+  if (mmsiList.length === 0) {
+    return NextResponse.json(
+      { error: 'Invalid mmsi parameter. Must be a comma-separated list of numbers.' },
       { status: 400 }
     )
   }
@@ -36,83 +50,105 @@ export async function GET(request: Request) {
       }
       
       const data = JSON.parse(fileContent)
-      
-      // Filter by MMSI if provided, otherwise use shipId as MMSI
-      const targetMmsi = mmsi ? parseInt(mmsi) : (shipId ? parseInt(shipId) : null)
-      
-      if (!targetMmsi) {
-        return NextResponse.json([])
-      }
 
       // Get current time and 24 hours ago
       const now = new Date()
       const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
 
-      // Extract trajectory points for the specified ship within last 24 hours
-      const trail: TrailPoint[] = data
+      // Group trails by MMSI (using string keys for JSON compatibility)
+      const trailsByMmsi: Record<string, TrailPoint[]> = {}
+      
+      // Initialize empty arrays for all requested MMSIs
+      mmsiList.forEach(mmsi => {
+        trailsByMmsi[mmsi.toString()] = []
+      })
+
+      // Extract trajectory points for all specified ships within last 24 hours
+      data
         .filter((item: any) => {
           const itemMmsi = item.MetaData?.MMSI
           const itemTime = item.MetaData?.time_utc
           if (!itemMmsi || !itemTime || !item.MetaData?.latitude || !item.MetaData?.longitude) {
             return false
           }
-          if (itemMmsi !== targetMmsi) {
+          if (!mmsiList.includes(itemMmsi)) {
             return false
           }
           const itemDate = new Date(itemTime)
           return itemDate >= twentyFourHoursAgo && itemDate <= now
         })
-        .map((item: any) => ({
-          lat: item.MetaData.latitude,
-          lon: item.MetaData.longitude,
-          timestamp: item.MetaData.time_utc || ''
-        }))
-        .sort((a: TrailPoint, b: TrailPoint) => 
+        .forEach((item: any) => {
+          const itemMmsi = item.MetaData.MMSI.toString()
+          if (!trailsByMmsi[itemMmsi]) {
+            trailsByMmsi[itemMmsi] = []
+          }
+          trailsByMmsi[itemMmsi].push({
+            lat: item.MetaData.latitude,
+            lon: item.MetaData.longitude,
+            timestamp: item.MetaData.time_utc || ''
+          })
+        })
+
+      // Sort each trail by timestamp
+      Object.keys(trailsByMmsi).forEach(mmsi => {
+        trailsByMmsi[mmsi].sort((a: TrailPoint, b: TrailPoint) => 
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
         )
+      })
 
-      return NextResponse.json(trail)
+      // If single MMSI requested, return array for backward compatibility
+      // Otherwise return object with MMSI as keys
+      if (mmsiList.length === 1) {
+        return NextResponse.json(trailsByMmsi[mmsiList[0].toString()] || [])
+      }
+
+      return NextResponse.json(trailsByMmsi)
     }
 
     // Query real data from postgres
     const db = getDb()
-    
-    // Determine MMSI to query - use mmsi param if provided, otherwise try to get from shipId
-    let targetMmsi: number | null = null
-    
-    if (mmsi) {
-      targetMmsi = parseInt(mmsi)
-    } else if (shipId) {
-      // Try to find MMSI from ships table or use shipId as MMSI
-      // For now, assume shipId might be MMSI in some cases
-      // In a real scenario, you'd want to look up the ship's MMSI from a ships table
-      targetMmsi = parseInt(shipId)
-    }
-    
-    if (!targetMmsi) {
-      return NextResponse.json([])
-    }
 
-    // Get position reports for the last 24 hours for this MMSI
+    // Get position reports for the last 24 hours for all MMSIs at once
     const positionReports = await db`
       SELECT 
+        pr.mmsi,
         ST_Y(pr.location) as latitude,
         ST_X(pr.location) as longitude,
         pr.time_utc
       FROM position_reports pr
-      WHERE pr.mmsi = ${targetMmsi}
+      WHERE pr.mmsi = ANY(${mmsiList})
         AND pr.time_utc >= NOW() - INTERVAL '24 hours'
-      ORDER BY pr.time_utc ASC
+      ORDER BY pr.mmsi, pr.time_utc ASC
     `
 
-    // Transform to TrailPoint format
-    const trail: TrailPoint[] = positionReports.map((report: any) => ({
-      lat: parseFloat(report.latitude) || 0,
-      lon: parseFloat(report.longitude) || 0,
-      timestamp: report.time_utc?.toISOString() || new Date().toISOString()
-    }))
+    // Group trails by MMSI (using string keys for JSON compatibility)
+    const trailsByMmsi: Record<string, TrailPoint[]> = {}
+    
+    // Initialize empty arrays for all requested MMSIs
+    mmsiList.forEach(mmsi => {
+      trailsByMmsi[mmsi.toString()] = []
+    })
 
-    return NextResponse.json(trail)
+    // Transform and group by MMSI
+    positionReports.forEach((report: any) => {
+      const mmsi = report.mmsi.toString()
+      if (!trailsByMmsi[mmsi]) {
+        trailsByMmsi[mmsi] = []
+      }
+      trailsByMmsi[mmsi].push({
+        lat: parseFloat(report.latitude) || 0,
+        lon: parseFloat(report.longitude) || 0,
+        timestamp: report.time_utc?.toISOString() || new Date().toISOString()
+      })
+    })
+
+    // If single MMSI requested, return array for backward compatibility
+    // Otherwise return object with MMSI as keys
+    if (mmsiList.length === 1) {
+      return NextResponse.json(trailsByMmsi[mmsiList[0].toString()] || [])
+    }
+
+    return NextResponse.json(trailsByMmsi)
   } catch (error) {
     console.error('Error fetching ship trail:', error)
     return NextResponse.json(
